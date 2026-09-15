@@ -2,6 +2,10 @@
 
 AI Prompt Macroは、PC版Chrome / Edgeで選んだChatGPTタブへ、事前に決めた指示を順番に送るローカルのブラウザ拡張です。**ChatGPTの回答本文は読み取りません。** 同じ指示の繰り返しや、指示・待機・確認ポイントを組み合わせた手順を実行できます。
 
+**原作者 / Original author:** [tomoponz](https://github.com/tomoponz)
+
+AI Prompt Macroはtomoponzが最初に開発したプロジェクトです。Fork、改善提案、Issue、Pull Requestを歓迎します。
+
 **現在の配布版: 0.4.0**。[Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-prompt-macro/faefckjniohmhndofpbbgfkkoemfialp)で **Live** になっています（2026年9月15日確認）。配布設定は **Hidden**、ストア掲載文は日本語・英語です。
 
 同じ指示を繰り返すQuick Prompt（クイックプロンプト）と、複数の指示を記述するAIPM Flowに対応しています。変更点と検証記録は[v0.4.0リリースノート](https://github.com/tomoponz/ai-prompt-macro-public/releases/tag/v0.4.0)を参照してください。ソースから手元に読み込む場合は、下の「ローカルにインストールする」を参照してください。
