@@ -4,7 +4,7 @@ AI Prompt Macroは、PC版Chrome / Edgeで選んだChatGPTタブへ、事前に�
 
 **原作者 / Original author:** [tomoponz](https://github.com/tomoponz)
 
-AI Prompt Macroはtomoponzが最初に開発したプロジェクトです。Fork、改善提案、Issue、Pull Requestを歓迎します。
+Fork、改善提案、Issue、Pull Requestを歓迎します。
 
 **現在の配布版: 0.4.0**。[Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-prompt-macro/faefckjniohmhndofpbbgfkkoemfialp)で **Live** になっています（2026年9月15日確認）。配布設定は **Hidden**、ストア掲載文は日本語・英語です。
 
