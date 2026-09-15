@@ -38,7 +38,7 @@ export const THEME_GROUPS = Object.freeze([
   Object.freeze({ id: "product", label: "UIスタイル" }),
   Object.freeze({ id: "operator", label: "オペレーター / 技術" }),
   Object.freeze({ id: "editorial", label: "エディトリアル / 実用" }),
-  Object.freeze({ id: "eva", label: "EVA" })
+  Object.freeze({ id: "eva", label: "コマンド" })
 ]);
 
 const theme = (id, displayName, group, origin, stance, accentPolicy, decoration = null) =>
@@ -78,8 +78,8 @@ export const THEMES = Object.freeze([
   theme("japanese-systems", "日本語業務システム", "editorial", "ui-lab:jp-systems", "light", "customizable"),
 
   /* --------------------------------------------------------------- EVA */
-  theme("eva-command", "EVA / 司令室", "eva", "ui-lab:eva", "both", "fixed", "hex-field"),
-  theme("eva-restrained", "EVA / 控えめ", "eva", "production:eva", "both", "customizable")
+  theme("eva-command", "コマンド / 司令室", "eva", "ui-lab:eva", "both", "fixed", "hex-field"),
+  theme("eva-restrained", "コマンド / 控えめ", "eva", "production:eva", "both", "customizable")
 ]);
 
 export const THEME_IDS = Object.freeze(THEMES.map((entry) => entry.id));

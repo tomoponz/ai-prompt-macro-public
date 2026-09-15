@@ -63,8 +63,8 @@ const EXPECTED_THEMES = Object.freeze([
   ["scientific-instrument", "科学計測器", "editorial", "ui-lab:instrument", "light", "customizable", null],
   ["calm-productivity", "落ち着いた作業環境", "editorial", "ui-lab:calm", "light", "customizable", null],
   ["japanese-systems", "日本語業務システム", "editorial", "ui-lab:jp-systems", "light", "customizable", null],
-  ["eva-command", "EVA / 司令室", "eva", "ui-lab:eva", "both", "fixed", "hex-field"],
-  ["eva-restrained", "EVA / 控えめ", "eva", "production:eva", "both", "customizable", null]
+  ["eva-command", "コマンド / 司令室", "eva", "ui-lab:eva", "both", "fixed", "hex-field"],
+  ["eva-restrained", "コマンド / 控えめ", "eva", "production:eva", "both", "customizable", null]
 ].map(([id, displayName, group, origin, stance, accentPolicy, decoration]) =>
   Object.freeze({ id, displayName, group, origin, stance, accentPolicy, decoration })));
 
@@ -82,7 +82,7 @@ const EXPECTED_GROUPS = Object.freeze([
   { id: "product", label: "UIスタイル" },
   { id: "operator", label: "オペレーター / 技術" },
   { id: "editorial", label: "エディトリアル / 実用" },
-  { id: "eva", label: "EVA" }
+  { id: "eva", label: "コマンド" }
 ]);
 
 const JAPANESE = /[\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Han}]/u;
