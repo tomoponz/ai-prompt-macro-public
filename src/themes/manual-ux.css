@@ -1,0 +1,555 @@
+/*
+  Manual UX corrections discovered during real Edge review.
+
+  Presentation only. Nothing here changes Run state, authority, Send, Stop,
+  storage semantics, messaging, target selection, or browser permissions.
+*/
+
+/* ========================================================================== */
+/* EVA / Command — Production viewport fixes                                 */
+/* ========================================================================== */
+
+:root[data-aipm-theme="eva-command"] body {
+  overflow: visible !important;
+}
+
+:root[data-aipm-theme="eva-command"] .aipm-theme-decoration {
+  position: fixed !important;
+  inset: 0;
+  opacity: .82;
+  overflow: hidden;
+}
+
+@media (max-width: 410px) {
+  :root[data-aipm-theme="eva-command"] .aipm-hex-tile {
+    --hex-size: 50px;
+  }
+
+  /* Keep the narrow Side Panel field connected without making the wider
+     Workspace or Settings ornaments denser. 53px is a restrained midpoint
+     between the narrow 50px fallback and the normal 56px tile. */
+  :root[data-aipm-theme="eva-command"] body.aipm-sidepanel-surface .aipm-hex-tile {
+    --hex-size: 53px;
+  }
+}
+
+/* ========================================================================== */
+/* Swiss Information — sticky readability                                    */
+/* ========================================================================== */
+
+:root[data-aipm-theme="swiss-information"] .run-card {
+  background: var(--aipm-bg) !important;
+}
+
+/* ========================================================================== */
+/* Product styles — reviewed dark patterns                                   */
+/*                                                                            */
+/* These product themes have independently reviewed real-product dark        */
+/* languages: ChatGPT, Gemini, Claude, Edge/Fluent, and iPadOS Settings.      */
+/* They are not naive inversions; each keeps its own surface model.           */
+/* ========================================================================== */
+
+/* ----------------------------- shared customizable accent in dark mode --- */
+:root:is(
+  [data-aipm-theme="chatgpt-native"],
+  [data-aipm-theme="google-native"],
+  [data-aipm-theme="claude-native"],
+  [data-aipm-theme="microsoft-fluent"],
+  [data-aipm-theme="apple-utility"]
+)[data-aipm-mode="dark"][data-aipm-accent="amber"] {
+  --aipm-accent: #c8873a !important;
+  --aipm-accent-text: #0e0f11 !important;
+}
+
+:root:is(
+  [data-aipm-theme="chatgpt-native"],
+  [data-aipm-theme="google-native"],
+  [data-aipm-theme="claude-native"],
+  [data-aipm-theme="microsoft-fluent"],
+  [data-aipm-theme="apple-utility"]
+)[data-aipm-mode="dark"][data-aipm-accent="violet"] {
+  --aipm-accent: #9273cf !important;
+  --aipm-accent-text: #14111d !important;
+}
+
+:root:is(
+  [data-aipm-theme="chatgpt-native"],
+  [data-aipm-theme="google-native"],
+  [data-aipm-theme="claude-native"],
+  [data-aipm-theme="microsoft-fluent"],
+  [data-aipm-theme="apple-utility"]
+)[data-aipm-mode="dark"][data-aipm-accent="green"] {
+  --aipm-accent: #4fa07c !important;
+  --aipm-accent-text: #0d1411 !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* ChatGPT Native dark — low-chrome conversational canvas                     */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="light"][data-aipm-accent="amber"] {
+  --aipm-accent: #8a5a12 !important;
+  --aipm-accent-bg: #8a5a12 !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-ink: #8a5a12 !important;
+  --aipm-accent-soft: #e8e0cf !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="light"][data-aipm-accent="violet"] {
+  --aipm-accent: #63479c !important;
+  --aipm-accent-bg: #63479c !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-ink: #63479c !important;
+  --aipm-accent-soft: #e2ddec !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="light"][data-aipm-accent="green"] {
+  --aipm-accent: #2f6b4a !important;
+  --aipm-accent-bg: #2f6b4a !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-ink: #2f6b4a !important;
+  --aipm-accent-soft: #dbe7e0 !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"][data-aipm-accent="amber"] {
+  --aipm-accent: #c8873a !important;
+  --aipm-accent-bg: #c8873a !important;
+  --aipm-accent-text: #0e0f11 !important;
+  --aipm-accent-ink: #c8873a !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"][data-aipm-accent="violet"] {
+  --aipm-accent: #9273cf !important;
+  --aipm-accent-bg: #9273cf !important;
+  --aipm-accent-text: #14111d !important;
+  --aipm-accent-ink: #9273cf !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"][data-aipm-accent="green"] {
+  --aipm-accent: #4fa07c !important;
+  --aipm-accent-bg: #4fa07c !important;
+  --aipm-accent-text: #0d1411 !important;
+  --aipm-accent-ink: #4fa07c !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"][data-aipm-accent="theme"] {
+  --aipm-accent: #3a83f7 !important;
+  --aipm-accent-bg: #3a83f7 !important;
+  --aipm-accent-text: #000000 !important;
+  --aipm-accent-ink: #63a8f8 !important;
+  --aipm-accent-soft: rgb(58 131 247 / 18%) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] body {
+  background: var(--aipm-bg) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border-soft) !important;
+  box-shadow: none !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.card,.panel,.nav-section),
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] .run-row,
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] .nav-links button {
+  background: var(--aipm-surface) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border) !important;
+  box-shadow: none !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.save-status,.run-state-badge,.count-badge),
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.detail-grid > div,.side-grid > div,.flow-preview dl > div,.preview-grid > div),
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.completion-outcome,.warning-note,.diagnostics-safety,.detail-notice) {
+  background: var(--aipm-surface-raised) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border-soft) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] .run-row.is-selected,
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] .nav-links button.is-selected {
+  background: var(--aipm-selected-bg) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.run-row-track,.progress-track) {
+  background: #303030 !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.actions button:not(.primary):not(.danger),.nav-footer button,.editor-card button:not(.danger-action):not(.primary-action),.button-row button:not(.danger-action)) {
+  background: var(--aipm-surface) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(button.danger,.danger-action) {
+  background: var(--state-stopped-bg) !important;
+  color: var(--state-stopped-fg) !important;
+  border-color: var(--state-stopped-line) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.run-row-top strong,.completion-outcome,.warning-note,.diagnostics-safety,.detail-notice,.diagnostics-events li,.diag-list li,.nav-links button) {
+  color: var(--aipm-muted) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.diagnostics-events li,.diag-list li) {
+  border-color: var(--aipm-border-soft) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="info"],.status-badge[data-safety="unknown"]) {
+  background: var(--aipm-text-tertiary) !important;
+}
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="attention"],.status-badge[data-safety="confirmation-required"]) {
+  background: #80631e !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Google Native — current Gemini palette and independent Accent axis         */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="light"][data-aipm-accent="theme"] {
+  --aipm-accent: #0b57d0 !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #9dd2ff !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="light"][data-aipm-accent="amber"] {
+  --aipm-accent: #8a5a12 !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #e8e0cf !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="light"][data-aipm-accent="violet"] {
+  --aipm-accent: #63479c !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #e2ddec !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="light"][data-aipm-accent="green"] {
+  --aipm-accent: #2f6b4a !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #dbe7e0 !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"][data-aipm-accent="theme"] {
+  --aipm-accent: #a8c7fa !important;
+  --aipm-accent-text: #0f0f0f !important;
+  --aipm-accent-soft: rgb(255 255 255 / 12%) !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"][data-aipm-accent="amber"] {
+  --aipm-accent-soft: #241c11 !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"][data-aipm-accent="violet"] {
+  --aipm-accent-soft: #1d1830 !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"][data-aipm-accent="green"] {
+  --aipm-accent-soft: #10201a !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] body {
+  background: var(--aipm-bg) !important;
+  color: var(--aipm-text) !important;
+  box-shadow: none !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] :is(.card,.panel) {
+  background: var(--aipm-surface-raised) !important;
+  color: var(--aipm-text) !important;
+  box-shadow: none !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] :is(.nav-section,.run-row) {
+  background: var(--aipm-surface) !important;
+  color: var(--aipm-text) !important;
+  box-shadow: none !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] :is(.save-status,.run-state-badge,.count-badge),
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] .run-row.is-selected,
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] .nav-links button.is-selected {
+  background: var(--aipm-accent-container) !important;
+  color: var(--aipm-accent) !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] .run-row.is-selected .run-row-name {
+  color: var(--aipm-accent) !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] :is(.completion-outcome,.warning-note,.diagnostics-safety,.detail-notice,.diagnostics-events li,.diag-list li) {
+  color: var(--aipm-secondary-text) !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] :is(button.danger,.danger-action) {
+  background: #5f2120 !important;
+  color: #f28b82 !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="info"],.status-badge[data-safety="unknown"]) {
+  background: var(--aipm-accent-container) !important;
+  color: var(--aipm-accent) !important;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="attention"],.status-badge[data-safety="confirmation-required"]) {
+  background: #554515 !important;
+  color: #fdd663 !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Claude Native — measured warm surfaces, functional blue Accent             */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="light"][data-aipm-accent="theme"] {
+  --aipm-accent: #2a78d6 !important;
+  --aipm-accent-text: #000000 !important;
+  --aipm-accent-soft: #cde2fb !important;
+  --aipm-accent-ink: #184f95 !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="light"][data-aipm-accent="amber"] {
+  --aipm-accent: #8a5a12 !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #e8e0cf !important;
+  --aipm-accent-ink: #8a5a12 !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="light"][data-aipm-accent="violet"] {
+  --aipm-accent: #63479c !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #e2ddec !important;
+  --aipm-accent-ink: #63479c !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="light"][data-aipm-accent="green"] {
+  --aipm-accent: #2f6b4a !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #dbe7e0 !important;
+  --aipm-accent-ink: #2f6b4a !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"][data-aipm-accent="theme"] {
+  --aipm-accent: #2a78d6 !important;
+  --aipm-accent-text: #000000 !important;
+  --aipm-accent-soft: #032042 !important;
+  --aipm-accent-ink: #6da7ec !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"][data-aipm-accent="amber"] {
+  --aipm-accent-soft: #241c11 !important;
+  --aipm-accent-ink: #c8873a !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"][data-aipm-accent="violet"] {
+  --aipm-accent-soft: #1d1830 !important;
+  --aipm-accent-ink: #9273cf !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"][data-aipm-accent="green"] {
+  --aipm-accent-soft: #10201a !important;
+  --aipm-accent-ink: #4fa07c !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"] :is(.card,.panel,.nav-section),
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"] .run-row {
+  background: var(--aipm-surface) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border) !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"] :is(input,select) {
+  background: var(--aipm-surface-raised) !important;
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"] :is(textarea,.editor-card) {
+  background: var(--aipm-surface-raised) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Microsoft Fluent dark — Edge/Windows layered neutral surfaces              */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"][data-aipm-accent="theme"] {
+  --aipm-accent: #60cdff !important;
+  --aipm-accent-text: #003847 !important;
+  --aipm-accent-soft: #15384a !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] body {
+  background: var(--aipm-bg) !important;
+  color: var(--aipm-text) !important;
+  box-shadow: 0 1.6px 3.6px rgb(0 0 0 / 35%), 0 6.4px 14.4px rgb(0 0 0 / 28%) !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.card,.panel,.nav-section),
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] .run-row,
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] .nav-links button {
+  background: var(--aipm-surface) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border) !important;
+  box-shadow: 0 .6px 1.8px rgb(0 0 0 / 28%) !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.save-status,.run-state-badge,.count-badge),
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.detail-grid > div,.side-grid > div,.flow-preview dl > div,.preview-grid > div),
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.completion-outcome,.warning-note,.diagnostics-safety,.detail-notice) {
+  background: var(--aipm-surface-raised) !important;
+  color: var(--aipm-text) !important;
+  border-color: var(--aipm-border) !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.run-row-track,.progress-track,.segment-track span) {
+  background: #3b3b3b !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.actions button:not(.primary):not(.danger),.nav-footer button,.editor-card button:not(.danger-action):not(.primary-action),.button-row button:not(.danger-action)) {
+  background: #2b2b2b !important;
+  color: #f5f5f5 !important;
+  border-color: #5a5a5a !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(button.danger,.danger-action) {
+  background: #302225 !important;
+  color: #ff99a4 !important;
+  border-color: #8c4f58 !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.completion-outcome,.warning-note,.diagnostics-safety,.detail-notice,.diagnostics-events li,.diag-list li) {
+  color: #d6d6d6 !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="info"],.status-badge[data-safety="unknown"]) {
+  background: #17395b !important;
+  color: #9ccaff !important;
+  border-color: #35678f !important;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="attention"],.status-badge[data-safety="confirmation-required"]) {
+  background: #4a3b14 !important;
+  color: #f7d774 !important;
+  border-color: #7c682f !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Apple Utility dark — iPadOS grouped settings                               */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"][data-aipm-accent="theme"] {
+  --aipm-accent: #0a84ff !important;
+  --aipm-accent-text: #ffffff !important;
+  --aipm-accent-soft: #102a44 !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] body {
+  background: #000 !important;
+  color: #fff !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.card,.panel,.nav-section),
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] .run-row,
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] .run-list,
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.completion-outcome,.warning-note,.diagnostics-safety,.detail-notice) {
+  background: var(--aipm-surface) !important;
+  color: var(--aipm-text) !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.detail-grid,.side-grid,.flow-preview dl,.preview-grid) {
+  background: var(--aipm-surface) !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.detail-grid > div,.side-grid > div,.flow-preview dl > div,.preview-grid > div) {
+  background: var(--aipm-surface) !important;
+  border-color: var(--separator) !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.save-status,.count-badge) {
+  background: rgb(118 118 128 / 24%) !important;
+  color: #ebebf5 !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] .run-row.is-selected {
+  background: rgb(10 132 255 / 18%) !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.run-row-track,.progress-track) {
+  background: rgb(118 118 128 / 36%) !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(button.danger,.danger-action) {
+  background: rgb(255 69 58 / 16%) !important;
+  color: #ff6961 !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.completion-outcome,.warning-note,.diagnostics-safety,.detail-notice,.diagnostics-events li,.diag-list li) {
+  color: #ebebf5 !important;
+  border-color: var(--separator) !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="info"],.status-badge[data-safety="unknown"]) {
+  background: rgb(118 118 128 / 28%) !important;
+  color: #ebebf5 !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] :is(.diagnostics-card [data-severity="attention"],.status-badge[data-safety="confirmation-required"]) {
+  background: rgb(255 159 10 / 22%) !important;
+  color: #ffb340 !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] .nav-section.nav-views {
+  background: rgb(118 118 128 / 24%) !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] .nav-links button {
+  color: #d1d1d6 !important;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] .nav-links button.is-selected {
+  background: #3a3a3c !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 55%) !important;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Product dark — disabled controls                                           */
+/*                                                                            */
+/* These designs fade a disabled control by lowering its opacity, at values   */
+/* tuned against a light canvas (.35 to .45). Opacity composites the element's */
+/* ink AND its ground toward whatever is behind it, so on a dark canvas both   */
+/* collapse together and the control lands at roughly 1.5-2.1:1 — still in the */
+/* DOM, effectively invisible. Measured on the real surfaces, every product    */
+/* theme failed this in dark on the Side Panel and the Workspace.              */
+/*                                                                            */
+/* Dark therefore keeps the idiom and corrects the value: the reference        */
+/* products all drop the accent fill on a disabled control rather than fading  */
+/* it, so the disabled state resolves to the production sunken fill with muted */
+/* ink and a restored opacity floor. All four independent disabled signals —   */
+/* fill, ink, border and cursor — survive, and Stop keeps its own red ink so   */
+/* danger is never carried by opacity alone.                                   */
+/*                                                                            */
+/* Presentation only. Nothing here decides, or reports, whether a control is   */
+/* disabled: that is `disabled` on the element, written from Run facts.        */
+/* -------------------------------------------------------------------------- */
+
+:root:is(
+  [data-aipm-theme="chatgpt-native"],
+  [data-aipm-theme="google-native"],
+  [data-aipm-theme="claude-native"],
+  [data-aipm-theme="microsoft-fluent"],
+  [data-aipm-theme="apple-utility"]
+)[data-aipm-mode="dark"] :is(button, .primary-action, .danger-action, .filter-chip, input, select, textarea):disabled {
+  opacity: .72 !important;
+  background: var(--aipm-surface-sunken) !important;
+  border-color: var(--aipm-border) !important;
+  color: var(--aipm-muted) !important;
+}
+
+:root:is(
+  [data-aipm-theme="chatgpt-native"],
+  [data-aipm-theme="google-native"],
+  [data-aipm-theme="claude-native"],
+  [data-aipm-theme="microsoft-fluent"],
+  [data-aipm-theme="apple-utility"]
+)[data-aipm-mode="dark"] :is(button.danger, .danger-action):disabled {
+  color: var(--aipm-status-stop) !important;
+}

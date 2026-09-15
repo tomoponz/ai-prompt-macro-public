@@ -1,0 +1,20 @@
+{
+  "name": "ai-prompt-macro",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "browser:install": "playwright-core install chromium",
+    "test:browser": "npm run test:browser:full",
+    "test:browser:smoke": "node tests/browser-fixture-e2e.mjs --profile=smoke",
+    "test:browser:full": "node tests/browser-fixture-e2e.mjs --profile=full",
+    "test:browser:torture": "node tests/browser-fixture-e2e.mjs --profile=torture",
+    "test:browser:release": "npm run test:browser:full && npm run test:browser:torture",
+    "check": "node --check src/background.js && node --check src/read-only-backpressure.js && node --check src/content-core.js && node --check src/content-runner.js && node --check src/content-controller.js && node --check src/sidepanel.js && node --check src/sidepanel-start-source.js && node --check src/sidepanel-flow-view.js && node --check src/editor-defaults.js && node --check src/editor-date-time.js && node --check src/tab-alias.js && node --check src/tab-alias-ui.js && node --check src/run-ux.js && node --check src/diagnostics-ux.js && node --check src/ux-guidance.js && node --check src/flow-authoring.js && node --check src/flow-library.js && node --check src/execution-plan.js && node --check src/recovery-policy.js && node --check src/connection-diagnostics.js && node --check src/connection-diagnostics-ui.js && node --check src/target-display.js && node --check src/target-selection.js && node --check src/dev-update.js && node --check src/workflow.js && node --check src/workflow-step-counts.js && node --check src/flow-script.js && node --check src/flow-compile.js && node --check src/ui-state-store.js && node --check src/settings-store.js && node --check src/themes/registry.js && node --check src/themes/decoration.js && node --check src/theme.js && node --check src/options.js && node --check src/workspace-projection.js && node --check src/workspace-editor-state.js && node --check src/workspace-editor.js && node --check src/workspace.js && node --check tests/browser-profiles.mjs && node --check tests/browser-fixture-e2e.mjs && node --check tests/theme-render.mjs",
+    "test:theme-render": "node tests/theme-render.mjs"
+  },
+  "devDependencies": {
+    "playwright-core": "1.62.1"
+  }
+}

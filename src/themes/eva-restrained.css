@@ -1,0 +1,449 @@
+/*
+  EVA / Restrained — production-oriented NERV operations language.
+
+  Design intent
+  -------------
+  EVA / Command remains the theatrical, high-density command-room treatment.
+  Restrained is the same visual family adapted for everyday software: warm-black
+  monitor surfaces, amber/orange structural rules, compact technical labels,
+  instrument-like progress, and low-radius controls. It deliberately has no
+  hex field, fake radar, decorative gauges, glow animation, or authority data.
+
+  Scope boundary
+  --------------
+  Presentation only. This stylesheet does not hide controls, create DOM, read
+  storage, message the runtime, or reference Run/target/document authority.
+  Status meaning remains semantic: running stays green-dominant, paused blue,
+  warning amber/orange, stop red, and every state keeps its existing text label.
+*/
+
+/* -------------------------------------------------------------------------- */
+/* Shared restrained EVA geometry / typography                                */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] {
+  --eva-orange: #d96516;
+  --eva-orange-strong: #f07a18;
+  --eva-amber: #e8a332;
+  --eva-yellow: #ffc04a;
+  --eva-warning: #d94a24;
+  --eva-rule: #8b4319;
+  --eva-rule-soft: #5f3018;
+
+  --aipm-radius: 4px;
+  --aipm-radius-sm: 3px;
+  --aipm-badge-radius: 2px;
+  --aipm-button-radius: 3px;
+  --aipm-progress-radius: 1px;
+  --aipm-progress-height: 8px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+
+  --aipm-font-sans: "Segoe UI Variable", "Yu Gothic UI", Meiryo, "Noto Sans JP", sans-serif;
+  --aipm-label-font: Bahnschrift, "DIN Condensed", "Arial Narrow", "Yu Gothic UI", sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .1em;
+}
+
+/* Theme-owned accent only. User-selected amber/violet/green remains free to
+   repaint the normal accent role; EVA identity is carried separately by the
+   --eva-* structural colours below. */
+:root[data-aipm-theme="eva-restrained"][data-aipm-accent="theme"] {
+  --aipm-accent: #c65a13;
+  --aipm-accent-text: #fff7ec;
+  --aipm-accent-soft: #f3dcc3;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Light — warm technical sheet, still recognisably the same EVA family       */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"][data-aipm-mode="light"] {
+  color-scheme: light;
+  --aipm-bg: #f1e5d5;
+  --aipm-surface: #fff8ed;
+  --aipm-surface-raised: #f3dfc6;
+  --aipm-surface-sunken: #ead6bd;
+  --aipm-surface-cockpit: #fff4e5;
+  --aipm-text: #2a170d;
+  --aipm-muted: #765538;
+  --aipm-border: #c4864e;
+  --aipm-border-strong: #9b5825;
+  --aipm-focus: #8f3610;
+  --aipm-shadow: rgb(73 34 10 / 14%);
+  --aipm-marker: #b86b2c;
+
+  --aipm-status-running: #356c38;
+  --aipm-status-paused: #325f8c;
+  --aipm-status-warning: #9b570e;
+  --aipm-status-stop: #a83620;
+  --aipm-status-done: #356c38;
+  --aipm-status-neutral: #765538;
+  --aipm-danger: #a83620;
+
+  --state-ready-bg: #f4e2c9;
+  --state-ready-fg: #6e451f;
+  --state-ready-line: #c4864e;
+  --state-running-bg: #e3eddf;
+  --state-running-fg: #356c38;
+  --state-running-line: #8fa987;
+  --state-paused-bg: #e3ebf2;
+  --state-paused-fg: #325f8c;
+  --state-paused-line: #88a4bd;
+  --state-needs-bg: #f7e1c4;
+  --state-needs-fg: #9b570e;
+  --state-needs-line: #d49a53;
+  --state-stopped-bg: #f3d8ce;
+  --state-stopped-fg: #a83620;
+  --state-stopped-line: #c8836d;
+  --state-completed-bg: #e3eddf;
+  --state-completed-fg: #356c38;
+  --state-completed-line: #8fa987;
+}
+
+:root[data-aipm-theme="eva-restrained"][data-aipm-mode="light"][data-aipm-accent="theme"] {
+  --aipm-accent: #b94f0e;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f2d6b6;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Dark — restrained orange monitor graphics                                  */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+  --aipm-bg: #090604;
+  --aipm-surface: #130d08;
+  --aipm-surface-raised: #1b120b;
+  --aipm-surface-sunken: #0d0906;
+  --aipm-surface-cockpit: #1a0f08;
+  --aipm-text: #f3dfc4;
+  --aipm-muted: #b18d68;
+  --aipm-border: #643217;
+  --aipm-border-strong: #9a4a19;
+  --aipm-focus: #ffc45c;
+  --aipm-shadow: rgb(0 0 0 / 55%);
+  --aipm-marker: #a9571d;
+
+  --aipm-status-running: #83c47a;
+  --aipm-status-paused: #73a8d6;
+  --aipm-status-warning: #efaa42;
+  --aipm-status-stop: #ef6747;
+  --aipm-status-done: #8bca83;
+  --aipm-status-neutral: #c39667;
+  --aipm-danger: #ef6747;
+
+  --state-ready-bg: #25160c;
+  --state-ready-fg: #e8a658;
+  --state-ready-line: #73401a;
+  --state-running-bg: #132416;
+  --state-running-fg: #8bd184;
+  --state-running-line: #3f7441;
+  --state-paused-bg: #121e29;
+  --state-paused-fg: #86b7e1;
+  --state-paused-line: #426b8e;
+  --state-needs-bg: #2b1809;
+  --state-needs-fg: #f3b14c;
+  --state-needs-line: #8d4d16;
+  --state-stopped-bg: #2b100b;
+  --state-stopped-fg: #ff8263;
+  --state-stopped-line: #8e3927;
+  --state-completed-bg: #142317;
+  --state-completed-fg: #91d08b;
+  --state-completed-line: #447248;
+}
+
+:root[data-aipm-theme="eva-restrained"][data-aipm-mode="dark"][data-aipm-accent="theme"] {
+  --aipm-accent: #f07a18;
+  --aipm-accent-text: #160a04;
+  --aipm-accent-soft: #321609;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Product shell / panels                                                      */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] body {
+  background-color: var(--aipm-bg);
+  color: var(--aipm-text);
+  font-family: var(--aipm-font-sans);
+}
+
+:root[data-aipm-theme="eva-restrained"][data-aipm-mode="dark"] body {
+  background-image:
+    linear-gradient(180deg, rgb(240 122 24 / 3%), transparent 160px),
+    linear-gradient(180deg, #0b0704 0%, var(--aipm-bg) 100%);
+}
+
+:root[data-aipm-theme="eva-restrained"][data-aipm-mode="light"] body {
+  background-image: linear-gradient(180deg, #f7edde 0%, var(--aipm-bg) 100%);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(.card,.panel,.nav-section),
+:root[data-aipm-theme="eva-restrained"] .run-row,
+:root[data-aipm-theme="eva-restrained"] .nav-links button {
+  color: var(--aipm-text);
+  background-color: var(--aipm-surface);
+  background-image: linear-gradient(90deg, var(--eva-orange) 0 34px, transparent 34px);
+  background-repeat: no-repeat;
+  background-size: 100% 1px;
+  border: 1px solid var(--aipm-border);
+  border-radius: 3px;
+  box-shadow: none;
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(.run-card,.detail-card,.editor-card) {
+  background-color: var(--aipm-surface-cockpit);
+  border-color: var(--aipm-border-strong);
+}
+
+:root[data-aipm-theme="eva-restrained"] .run-card {
+  background-image:
+    linear-gradient(90deg, var(--eva-orange-strong) 0 58px, var(--eva-amber) 58px 84px, transparent 84px),
+    linear-gradient(180deg, rgb(240 122 24 / 4%), transparent 42%);
+  background-repeat: no-repeat;
+  background-size: 100% 2px, 100% 100%;
+}
+
+:root[data-aipm-theme="eva-restrained"] .target-card {
+  border-left: 3px solid var(--eva-amber);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Information hierarchy / typography                                         */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .eyebrow,
+  .run-status-caption,
+  .guidance-label,
+  .metric-label,
+  .card-heading .eyebrow,
+  .target-presentation-copy span,
+  .run-row-meta,
+  .saved-automation-summary,
+  .field-hint,
+  .hint
+) {
+  color: var(--aipm-muted);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .eyebrow,
+  .run-status-caption,
+  .guidance-label,
+  .metric-label,
+  .card-heading .eyebrow
+) {
+  font-family: var(--aipm-label-font);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  body > header h1,
+  .brand h1,
+  .page-header h1,
+  .section-heading h2,
+  .detail-header h2
+) {
+  letter-spacing: .035em;
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .run-progress-value,
+  .metric-value,
+  .detail-percent,
+  .run-count,
+  .run-row-progress
+) {
+  color: var(--eva-amber);
+  font-family: Bahnschrift, "DIN Condensed", "Arial Narrow", var(--aipm-font-sans);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .045em;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Form controls                                                               */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] :is(input,select,textarea) {
+  color: var(--aipm-text);
+  background: var(--aipm-surface-sunken);
+  border: 1px solid var(--aipm-border);
+  border-radius: 2px;
+  box-shadow: inset 0 1px 0 rgb(255 171 70 / 4%);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(input,textarea)::placeholder {
+  color: var(--aipm-muted);
+  opacity: .72;
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(input,select,textarea):focus-visible {
+  outline: 1px solid var(--eva-yellow);
+  outline-offset: 1px;
+  border-color: var(--eva-orange-strong);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Buttons                                                                     */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .actions button:not(.primary):not(.danger),
+  .nav-footer button,
+  .editor-card button:not(.danger-action):not(.primary-action),
+  .button-row button:not(.danger-action),
+  button.small:not(.danger)
+) {
+  color: var(--aipm-text);
+  background: var(--aipm-surface-sunken);
+  border-color: var(--aipm-border);
+  border-radius: 2px;
+  box-shadow: inset 0 -1px 0 rgb(0 0 0 / 30%);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(button.primary,.primary-action) {
+  color: var(--aipm-accent-text);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--aipm-accent) 88%, #ffb039 12%), var(--aipm-accent));
+  border-color: color-mix(in srgb, var(--aipm-accent) 72%, var(--eva-yellow) 28%);
+  border-radius: 2px;
+  box-shadow: inset 0 -2px 0 rgb(74 25 4 / 28%);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(button.danger,.danger-action) {
+  color: var(--aipm-status-stop);
+  background: color-mix(in srgb, var(--aipm-status-stop) 12%, var(--aipm-surface));
+  border-color: color-mix(in srgb, var(--aipm-status-stop) 64%, var(--aipm-border));
+  border-radius: 2px;
+}
+
+:root[data-aipm-theme="eva-restrained"] button:not(:disabled):hover {
+  border-color: var(--eva-orange-strong);
+}
+
+:root[data-aipm-theme="eva-restrained"] button:focus-visible {
+  outline: 1px solid var(--eva-yellow);
+  outline-offset: 1px;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Progress — restrained monitor scale, not the Command hex treatment          */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] :is(.run-row-track,.progress-track) {
+  height: 8px;
+  background-color: var(--aipm-surface-sunken);
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--aipm-border-strong) 0 1px,
+    transparent 1px 12px
+  );
+  border: 1px solid var(--aipm-border);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(.run-row-fill,.progress-fill,.progress-bar) {
+  background: linear-gradient(90deg, #cf431c 0%, var(--eva-orange-strong) 52%, var(--eva-yellow) 100%);
+  border-radius: 0;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Navigation / selection                                                      */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] .nav-links button {
+  background-image: none;
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(.nav-links button.is-selected,.run-row.is-selected) {
+  color: var(--aipm-text);
+  background: color-mix(in srgb, var(--eva-orange) 10%, var(--aipm-surface));
+  border-color: var(--aipm-border-strong);
+  box-shadow: inset 3px 0 0 var(--eva-orange-strong);
+}
+
+:root[data-aipm-theme="eva-restrained"] .run-row.is-selected .run-row-name {
+  color: var(--eva-amber);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Information cells / details / diagnostics                                  */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .detail-grid > div,
+  .side-grid > div,
+  .flow-preview dl > div,
+  .preview-grid > div
+) {
+  color: var(--aipm-text);
+  background: var(--aipm-surface-raised);
+  border: 1px solid var(--aipm-border);
+  border-radius: 2px;
+}
+
+:root[data-aipm-theme="eva-restrained"] details {
+  color: var(--aipm-text);
+  background: var(--aipm-surface);
+  border-color: var(--aipm-border);
+}
+
+:root[data-aipm-theme="eva-restrained"] summary {
+  color: var(--eva-amber);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .completion-outcome,
+  .warning-note,
+  .diagnostics-safety,
+  .detail-notice
+) {
+  color: var(--aipm-muted);
+  background: var(--aipm-surface-raised);
+  border-left: 3px solid var(--eva-orange);
+  border-radius: 2px;
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(.diagnostics-events li,.diag-list li) {
+  color: var(--aipm-muted);
+  border-top-color: var(--aipm-border);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .diagnostics-card [data-severity="attention"],
+  .status-badge[data-safety="confirmation-required"]
+) {
+  color: var(--state-needs-fg);
+  background: var(--state-needs-bg);
+  border-color: var(--state-needs-line);
+}
+
+:root[data-aipm-theme="eva-restrained"] :is(
+  .diagnostics-card [data-severity="safety-stop"],
+  .status-badge[data-safety="fail-closed"]
+) {
+  color: var(--state-stopped-fg);
+  background: var(--state-stopped-bg);
+  border-color: var(--state-stopped-line);
+}
+
+/* Existing shared fidelity rules map run-state/status-badge semantics onto the
+   --state-* tokens above. Keep labels intact; never encode meaning in colour
+   alone. */
+
+/* -------------------------------------------------------------------------- */
+/* Density: calm enough for everyday use                                      */
+/* -------------------------------------------------------------------------- */
+
+:root[data-aipm-theme="eva-restrained"][data-aipm-density="compact"] :is(.card,.panel,.nav-section) {
+  border-radius: 2px;
+}
+
+/* Explicitly no EVA / Command ornament in restrained mode. */
+:root[data-aipm-theme="eva-restrained"] .aipm-theme-decoration {
+  display: none !important;
+}

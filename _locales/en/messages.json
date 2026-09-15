@@ -1,0 +1,10 @@
+{
+  "extensionName": {
+    "message": "AI Prompt Macro",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "Runs up to 50 sequential prompt sends in an explicitly selected ChatGPT tab without reading assistant response text.",
+    "description": "Description shown in the Edge Add-ons listing"
+  }
+}

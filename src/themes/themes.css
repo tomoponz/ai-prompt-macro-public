@@ -1,0 +1,1381 @@
+/*
+  Theme catalogue — 23 canonical themes.
+
+  Every rule in this file is scoped to a single `:root[data-aipm-theme="<id>"]`
+  selector, so no theme can affect another and none can affect the base tokens.
+  Each block writes tokens only: palette, status semantics, geometry and the
+  typographic system the design owns. No rule here targets a Run control, a
+  status element, or any authority attribute.
+
+  Twenty-one palettes are ported from UI Lab design studies;
+  `default` lives in ui-tokens.css and `eva-restrained` keeps the values this
+  repository already shipped. Four product-style dark variants were later
+  reviewed against real dark product references and are declared as explicit
+  mode blocks below rather than fabricated inversions.
+
+  Status tokens are written per theme so contrast stays adequate, but the
+  mapping from meaning to hue never moves: running stays green-dominant, stop
+  stays red-dominant, warning stays amber, paused stays blue — and every status
+  is also rendered with a text label, so meaning never depends on colour.
+*/
+
+/* ===== clean-premium — ported from UI Lab `clean` ===== */
+:root[data-aipm-theme="clean-premium"] {
+  color-scheme: light;
+
+  --aipm-bg: #f5f7fb;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f8fafc;
+  --aipm-surface-sunken: #f8fafc;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #0f172a;
+  --aipm-muted: #64748b;
+  --aipm-border: #dbe3ee;
+  --aipm-border-strong: #dbe3ee;
+  --aipm-accent: #2563eb;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #dbeafe;
+  --aipm-focus: #0f172a;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #15803d;
+  --aipm-status-paused: #a16207;
+  --aipm-status-warning: #c2410c;
+  --aipm-status-stop: #b91c1c;
+  --aipm-status-done: #047857;
+  --aipm-status-neutral: #1d4ed8;
+  --aipm-danger: #b91c1c;
+  --aipm-marker: #dbe3ee;
+
+  --aipm-radius: 12px;
+  --aipm-radius-sm: 9px;
+  --aipm-badge-radius: 999px;
+  --aipm-button-radius: 9px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 7px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 1px 2px rgb(15 23 42 / 6%), 0 10px 30px rgb(15 23 42 / 8%);
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+  --aipm-label-font: "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .08em;
+}
+
+:root[data-aipm-theme="clean-premium"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+
+  --aipm-bg: #0e141d;
+  --aipm-surface: #151d29;
+  --aipm-surface-raised: #16273b;
+  --aipm-surface-sunken: #111923;
+  --aipm-surface-cockpit: #1a2432;
+  --aipm-text: #eef4fb;
+  --aipm-muted: #91a0b4;
+  --aipm-border: #2b394b;
+  --aipm-border-strong: #334155;
+  --aipm-accent: #60a5fa;
+  --aipm-accent-text: #0e141d;
+  --aipm-accent-soft: #16273b;
+  --aipm-focus: #eef4fb;
+  --aipm-shadow: rgb(0 0 0 / 48%);
+
+  --aipm-status-running: #7bdca8;
+  --aipm-status-paused: #8bc5ff;
+  --aipm-status-warning: #f3ad72;
+  --aipm-status-stop: #f69a9a;
+  --aipm-status-done: #86d5ad;
+  --aipm-status-neutral: #91a0b4;
+  --aipm-danger: #f69a9a;
+  --aipm-marker: #334155;
+}
+
+/* ===== chatgpt-native — ported from UI Lab `chatgpt-native` ===== */
+:root[data-aipm-theme="chatgpt-native"] {
+  color-scheme: light;
+
+  --aipm-bg: #fcfcfc;
+  --aipm-surface: #f9f9f9;
+  --aipm-surface-raised: #ececec;
+  --aipm-surface-sunken: #e3e3e3;
+  --aipm-surface-cockpit: #f9f9f9;
+  --aipm-text: #0d0d0d;
+  --aipm-muted: #5d5d5d;
+  --aipm-text-tertiary: #8f8f8f;
+  --aipm-border-soft: rgb(0 0 0 / 5%);
+  --aipm-border: rgb(0 0 0 / 10%);
+  --aipm-border-strong: rgb(0 0 0 / 15%);
+  --aipm-selected-bg: rgb(0 0 0 / 5%);
+  --aipm-input-bg: rgb(233 233 233 / 50%);
+  --aipm-hover-bg: #ececec;
+  --aipm-accent-bg: #3a83f7;
+  --aipm-accent: #2c67c5;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-ink: #2c67c5;
+  --aipm-accent-soft: rgb(58 131 247 / 12%);
+  --aipm-focus: #2c67c5;
+  --aipm-shadow: transparent;
+
+  --aipm-status-running: #1f4e25;
+  --aipm-status-paused: #2c67c5;
+  --aipm-status-warning: #d25e28;
+  --aipm-status-stop: #ff002a;
+  --aipm-status-done: #286234;
+  --aipm-status-neutral: #5d5d5d;
+  --aipm-danger: #ff002a;
+  --aipm-marker: #e3e3e3;
+
+  --aipm-radius: 14px;
+  --aipm-radius-sm: 10px;
+  --aipm-badge-radius: 999px;
+  --aipm-button-radius: 8px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 6px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: 0;
+}
+
+/* ===== google-native — ported from UI Lab `google-native` ===== */
+:root[data-aipm-theme="google-native"] {
+  color-scheme: light;
+
+  --aipm-bg: #fdfcfc;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f0f4f9;
+  --aipm-surface-sunken: #f2f0f0;
+  --aipm-surface-cockpit: #f0f4f9;
+  --aipm-text: #1f1f1f;
+  --aipm-secondary-text: #444746;
+  --aipm-muted: #5f6368;
+  --aipm-border: #c4c7c5;
+  --aipm-border-strong: #8e918f;
+  --aipm-accent: #0b57d0;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #9dd2ff;
+  --aipm-focus: #0b57d0;
+  --aipm-shadow: rgb(0 0 0 / 28%);
+
+  --aipm-status-running: #10653a;
+  --aipm-status-paused: #7a4d00;
+  --aipm-status-warning: #8b3a04;
+  --aipm-status-stop: #a1160f;
+  --aipm-status-done: #10357f;
+  --aipm-status-neutral: #3c4043;
+  --aipm-danger: #a1160f;
+  --aipm-marker: #c4c7c5;
+
+  --aipm-radius: 12px;
+  --aipm-radius-sm: 12px;
+  --aipm-badge-radius: 999px;
+  --aipm-button-radius: 999px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 4px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: Roboto, "Segoe UI Variable", "Segoe UI", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: .01em;
+}
+
+/* ===== claude-native — measured current Claude product language ===== */
+:root[data-aipm-theme="claude-native"] {
+  color-scheme: light;
+
+  --aipm-bg: #fcfcfb;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f9f9f7;
+  --aipm-surface-sunken: #edece8;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #0b0b0b;
+  --aipm-secondary-text: #52514e;
+  --aipm-muted: #898781;
+  --aipm-border: rgb(11 11 11 / 10%);
+  --aipm-border-strong: rgb(11 11 11 / 20%);
+  --aipm-accent: #2a78d6;
+  --aipm-accent-text: #000000;
+  --aipm-accent-soft: #cde2fb;
+  --aipm-accent-ink: #184f95;
+  --aipm-focus: #184f95;
+  --aipm-shadow: rgb(0 0 0 / 18%);
+  --aipm-brand-detail: #c6613f;
+
+  --aipm-status-running: #24583a;
+  --aipm-status-paused: #6b550f;
+  --aipm-status-warning: #8a4b12;
+  --aipm-status-stop: #8e2626;
+  --aipm-status-done: #184f95;
+  --aipm-status-neutral: #52514e;
+  --aipm-danger: #8e2626;
+  --aipm-marker: #c6613f;
+
+  --aipm-radius: 12px;
+  --aipm-radius-sm: 8px;
+  --aipm-badge-radius: 7px;
+  --aipm-button-radius: 8px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 4px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 4px 20px rgb(0 0 0 / 3.5%);
+  --aipm-font-sans: system-ui, "Segoe UI", Roboto, Helvetica, Arial, "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: 0;
+}
+
+/* ===== microsoft-fluent — ported from UI Lab `fluent` ===== */
+:root[data-aipm-theme="microsoft-fluent"] {
+  color-scheme: light;
+
+  --aipm-bg: #f3f3f3;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #fafafa;
+  --aipm-surface-sunken: #fafafa;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #1b1a19;
+  --aipm-muted: #605e5c;
+  --aipm-border: #e1dfdd;
+  --aipm-border-strong: #c8c6c4;
+  --aipm-accent: #0f5cc0;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #fafafa;
+  --aipm-focus: #1b1a19;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #0b6a0b;
+  --aipm-status-paused: #7a5c00;
+  --aipm-status-warning: #8e3a10;
+  --aipm-status-stop: #a4262c;
+  --aipm-status-done: #3b3480;
+  --aipm-status-neutral: #323130;
+  --aipm-danger: #a4262c;
+  --aipm-marker: #c8c6c4;
+
+  --aipm-radius: 8px;
+  --aipm-radius-sm: 4px;
+  --aipm-badge-radius: 4px;
+  --aipm-button-radius: 4px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 4px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 1.6px 3.6px rgb(0 0 0 / 11%), 0 0.3px 0.9px rgb(0 0 0 / 7%);
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", "Meiryo UI", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: 0;
+}
+
+/* ===== apple-utility — ported from UI Lab `apple-utility` ===== */
+:root[data-aipm-theme="apple-utility"] {
+  color-scheme: light;
+
+  --aipm-bg: #f2f2f7;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f2f2f7;
+  --aipm-surface-sunken: #f2f2f7;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #1c1c1e;
+  --aipm-muted: #8a8a8e;
+  --aipm-border: #e5e5ea;
+  --aipm-border-strong: #e5e5ea;
+  --aipm-accent: #0b6bcb;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f2f2f7;
+  --aipm-focus: #1c1c1e;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #17803d;
+  --aipm-status-paused: #a1650a;
+  --aipm-status-warning: #c2410c;
+  --aipm-status-stop: #d70015;
+  --aipm-status-done: #0b6bcb;
+  --aipm-status-neutral: #6c6c70;
+  --aipm-danger: #d70015;
+  --aipm-marker: #e5e5ea;
+
+  --aipm-radius: 16px;
+  --aipm-radius-sm: 12px;
+  --aipm-badge-radius: 999px;
+  --aipm-button-radius: 12px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 5px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  --aipm-font-sans: "Segoe UI Variable", "SF Pro Text", "Helvetica Neue", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: 0;
+}
+
+/* ===== linear-saas — ported from UI Lab `linear-saas` ===== */
+:root[data-aipm-theme="linear-saas"] {
+  color-scheme: dark;
+
+  --aipm-bg: #0e0e11;
+  --aipm-surface: #141418;
+  --aipm-surface-raised: #191920;
+  --aipm-surface-sunken: #191920;
+  --aipm-surface-cockpit: #191920;
+  --aipm-text: #eceef3;
+  --aipm-muted: #7c7f8a;
+  --aipm-border: rgba(255,255,255,.07);
+  --aipm-border-strong: rgba(255,255,255,.13);
+  /* UI Lab ships #6e63f5. Darkened one step and paired with white so control
+     text on the accent reaches AA (4.37:1 -> 5.8:1); the hue is unchanged. */
+  --aipm-accent: #5b4fe0;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #191920;
+  --aipm-focus: #eceef3;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #4cc38a;
+  --aipm-status-paused: #f0b429;
+  --aipm-status-warning: #f2914a;
+  --aipm-status-stop: #ff6369;
+  --aipm-status-done: #9d95ff;
+  --aipm-status-neutral: #9ea1ab;
+  --aipm-danger: #ff6369;
+  --aipm-marker: rgba(255,255,255,.13);
+
+  --aipm-radius: 10px;
+  --aipm-radius-sm: 6px;
+  --aipm-badge-radius: 5px;
+  --aipm-button-radius: 6px;
+  --aipm-progress-radius: 2px;
+  --aipm-progress-height: 2px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 12px 32px rgb(0 0 0 / 45%);
+  --aipm-font-sans: Inter, "Segoe UI Variable", "Segoe UI", "Noto Sans JP", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: .01em;
+}
+
+/* ===== terminal — ported from UI Lab `terminal` ===== */
+:root[data-aipm-theme="terminal"] {
+  color-scheme: dark;
+
+  --aipm-bg: #050807;
+  --aipm-surface: #080d0b;
+  --aipm-surface-raised: #0b110e;
+  --aipm-surface-sunken: #0b110e;
+  --aipm-surface-cockpit: #0b110e;
+  --aipm-text: #d7e5dc;
+  --aipm-muted: #70857a;
+  --aipm-border: #294236;
+  --aipm-border-strong: #294236;
+  --aipm-accent: #49d68d;
+  --aipm-accent-text: #050807;
+  --aipm-accent-soft: #0b110e;
+  --aipm-focus: #d7e5dc;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #6be29f;
+  --aipm-status-paused: #ddbd58;
+  --aipm-status-warning: #e5a85a;
+  --aipm-status-stop: #ef7776;
+  --aipm-status-done: #8bcfaf;
+  --aipm-status-neutral: #75cda2;
+  --aipm-danger: #ef7776;
+  --aipm-marker: #294236;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 8px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Cascadia Mono", Consolas, "Yu Gothic UI", Meiryo, monospace;
+  --aipm-label-font: "Cascadia Mono", Consolas, monospace;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .1em;
+}
+
+/* ===== modern-terminal — ported from UI Lab `modern-terminal` ===== */
+:root[data-aipm-theme="modern-terminal"] {
+  color-scheme: dark;
+
+  --aipm-bg: #14120f;
+  --aipm-surface: #1a1815;
+  --aipm-surface-raised: #201d19;
+  --aipm-surface-sunken: #201d19;
+  --aipm-surface-cockpit: #201d19;
+  --aipm-text: #e8e2d6;
+  --aipm-muted: #8f887c;
+  --aipm-border: #2e2a24;
+  --aipm-border-strong: #443e35;
+  --aipm-accent: #e0a53f;
+  --aipm-accent-text: #14120f;
+  --aipm-accent-soft: #201d19;
+  --aipm-focus: #e8e2d6;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #8fc858;
+  --aipm-status-paused: #dcb84a;
+  --aipm-status-warning: #e0913f;
+  --aipm-status-stop: #ef6a5f;
+  --aipm-status-done: #5fc4c8;
+  --aipm-status-neutral: #9a9284;
+  --aipm-danger: #ef6a5f;
+  --aipm-marker: #443e35;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 10px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  --aipm-label-font: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .14em;
+}
+
+/* ===== mission-control — ported from UI Lab `mission-control` ===== */
+:root[data-aipm-theme="mission-control"] {
+  color-scheme: dark;
+
+  --aipm-bg: #070c13;
+  --aipm-surface: #0d1621;
+  --aipm-surface-raised: #111d2b;
+  --aipm-surface-sunken: #111d2b;
+  --aipm-surface-cockpit: #111d2b;
+  --aipm-text: #dbe7f3;
+  --aipm-muted: #7794b0;
+  --aipm-border: #1d2c3d;
+  --aipm-border-strong: #2c4258;
+  --aipm-accent: #2ec7b8;
+  --aipm-accent-text: #070c13;
+  --aipm-accent-soft: #111d2b;
+  --aipm-focus: #dbe7f3;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #45dccb;
+  --aipm-status-paused: #ecc25a;
+  --aipm-status-warning: #f0954a;
+  --aipm-status-stop: #ff6f63;
+  --aipm-status-done: #79aeea;
+  --aipm-status-neutral: #9db4c9;
+  --aipm-danger: #ff6f63;
+  --aipm-marker: #2c4258;
+
+  --aipm-radius: 2px;
+  --aipm-radius-sm: 2px;
+  --aipm-badge-radius: 2px;
+  --aipm-button-radius: 2px;
+  --aipm-progress-radius: 1px;
+  --aipm-progress-height: 9px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 0 0 1px rgb(46 199 184 / 10%);
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Noto Sans JP", sans-serif;
+  --aipm-label-font: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .16em;
+}
+
+/* ===== operator-dense — ported from UI Lab `operator-dense` ===== */
+:root[data-aipm-theme="operator-dense"] {
+  color-scheme: dark;
+
+  --aipm-bg: #11141a;
+  --aipm-surface: #161a21;
+  --aipm-surface-raised: #1b2029;
+  --aipm-surface-sunken: #1b2029;
+  --aipm-surface-cockpit: #1b2029;
+  --aipm-text: #dfe5ec;
+  --aipm-muted: #78838f;
+  --aipm-border: #242a33;
+  --aipm-border-strong: #333c48;
+  --aipm-accent: #39a0ed;
+  --aipm-accent-text: #11141a;
+  --aipm-accent-soft: #1b2029;
+  --aipm-focus: #dfe5ec;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #46c98a;
+  --aipm-status-paused: #dbb63c;
+  --aipm-status-warning: #e8923f;
+  --aipm-status-stop: #f2666b;
+  --aipm-status-done: #6bb6f5;
+  --aipm-status-neutral: #8b96a3;
+  --aipm-danger: #f2666b;
+  --aipm-marker: #333c48;
+
+  --aipm-radius: 3px;
+  --aipm-radius-sm: 2px;
+  --aipm-badge-radius: 2px;
+  --aipm-button-radius: 2px;
+  --aipm-progress-radius: 1px;
+  --aipm-progress-height: 4px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Noto Sans JP", sans-serif;
+  --aipm-label-font: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .1em;
+}
+
+/* ===== industrial-control — ported from UI Lab `industrial` ===== */
+:root[data-aipm-theme="industrial-control"] {
+  color-scheme: light;
+
+  --aipm-bg: #d4d7d1;
+  --aipm-surface: #ebeee9;
+  --aipm-surface-raised: #dfe2dc;
+  --aipm-surface-sunken: #dfe2dc;
+  --aipm-surface-cockpit: #ebeee9;
+  --aipm-text: #171a15;
+  --aipm-muted: #565a51;
+  --aipm-border: #8b8f86;
+  --aipm-border-strong: #5f635a;
+  --aipm-accent: #1b5e8f;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #dfe2dc;
+  --aipm-focus: #171a15;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #165c1c;
+  --aipm-status-paused: #6b5000;
+  --aipm-status-warning: #7c4308;
+  --aipm-status-stop: #8c1a0f;
+  --aipm-status-done: #1b4570;
+  --aipm-status-neutral: #3a3e36;
+  --aipm-danger: #8c1a0f;
+  --aipm-marker: #5f635a;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 12px;
+  --aipm-border-width: 2px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Roboto Condensed", "Arial Narrow", "Segoe UI", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: "Roboto Condensed", "Arial Narrow", sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .1em;
+}
+
+/* ===== mecha — ported from UI Lab `mecha` ===== */
+:root[data-aipm-theme="mecha"] {
+  color-scheme: dark;
+
+  --aipm-bg: #11171b;
+  --aipm-surface: #1a2228;
+  --aipm-surface-raised: #202a31;
+  --aipm-surface-sunken: #202a31;
+  --aipm-surface-cockpit: #202a31;
+  --aipm-text: #edf2f4;
+  --aipm-muted: #96a4ad;
+  --aipm-border: #5b6870;
+  --aipm-border-strong: #5b6870;
+  --aipm-accent: #16b8ff;
+  --aipm-accent-text: #11171b;
+  --aipm-accent-soft: #202a31;
+  --aipm-focus: #edf2f4;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #77e1ad;
+  --aipm-status-paused: #ffd476;
+  --aipm-status-warning: #ffb36b;
+  --aipm-status-stop: #ff9d97;
+  --aipm-status-done: #8de0b7;
+  --aipm-status-neutral: #87d9ff;
+  --aipm-danger: #ff9d97;
+  --aipm-marker: #5b6870;
+
+  --aipm-radius: 4px;
+  --aipm-radius-sm: 3px;
+  --aipm-badge-radius: 3px;
+  --aipm-button-radius: 3px;
+  --aipm-progress-radius: 2px;
+  --aipm-progress-height: 7px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 0 0 1px rgb(0 0 0 / 45%);
+  --aipm-font-sans: Bahnschrift, "Arial Narrow", "Yu Gothic UI", Meiryo, sans-serif;
+  --aipm-label-font: Bahnschrift, "Arial Narrow", "Yu Gothic UI", sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .13em;
+}
+
+/* ===== neo-tech — ported from UI Lab `neo` ===== */
+:root[data-aipm-theme="neo-tech"] {
+  color-scheme: dark;
+
+  --aipm-bg: #05111f;
+  --aipm-surface: #081827;
+  --aipm-surface-raised: #0b1e30;
+  --aipm-surface-sunken: #0b1e30;
+  --aipm-surface-cockpit: #0b1e30;
+  --aipm-text: #e8f5ff;
+  --aipm-muted: #78a4bf;
+  --aipm-border: #153e5c;
+  --aipm-border-strong: #153e5c;
+  --aipm-accent: #16d8ff;
+  --aipm-accent-text: #05111f;
+  --aipm-accent-soft: #0b1e30;
+  --aipm-focus: #e8f5ff;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #65efb2;
+  --aipm-status-paused: #ffd184;
+  --aipm-status-warning: #ffb078;
+  --aipm-status-stop: #ff91aa;
+  --aipm-status-done: #b7a8ff;
+  --aipm-status-neutral: #70e7ff;
+  --aipm-danger: #ff91aa;
+  --aipm-marker: #153e5c;
+
+  --aipm-radius: 10px;
+  --aipm-radius-sm: 7px;
+  --aipm-badge-radius: 999px;
+  --aipm-button-radius: 7px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 6px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 0 0 1px rgb(22 216 255 / 12%), 0 12px 34px rgb(0 0 0 / 55%);
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+  --aipm-label-font: "Segoe UI Variable", "Segoe UI", "Yu Gothic UI", Meiryo, sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .12em;
+}
+
+/* ===== swiss-information — ported from UI Lab `swiss` ===== */
+:root[data-aipm-theme="swiss-information"] {
+  color-scheme: light;
+
+  --aipm-bg: #ffffff;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f4f4f4;
+  --aipm-surface-sunken: #f4f4f4;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #111111;
+  --aipm-muted: #767676;
+  --aipm-border: #111111;
+  --aipm-border-strong: #111111;
+  --aipm-accent: #d81e21;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f4f4f4;
+  --aipm-focus: #111111;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #111111;
+  --aipm-status-paused: #111111;
+  --aipm-status-warning: #111111;
+  --aipm-status-stop: #d81e21;
+  --aipm-status-done: #111111;
+  --aipm-status-neutral: #767676;
+  --aipm-danger: #d81e21;
+  --aipm-marker: #111111;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 6px;
+  --aipm-border-width: 0px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Helvetica Neue", Helvetica, Arial, "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .06em;
+}
+
+/* ===== technical-manual — ported from UI Lab `technical-manual` ===== */
+:root[data-aipm-theme="technical-manual"] {
+  color-scheme: light;
+
+  --aipm-bg: #faf7f0;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f4efe4;
+  --aipm-surface-sunken: #f4efe4;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #241f19;
+  --aipm-muted: #6f6558;
+  --aipm-border: #ddd5c6;
+  --aipm-border-strong: #b9ae9b;
+  --aipm-accent: #1f5673;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f4efe4;
+  --aipm-focus: #241f19;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #2d5c2a;
+  --aipm-status-paused: #6d5410;
+  --aipm-status-warning: #7d4715;
+  --aipm-status-stop: #8a2318;
+  --aipm-status-done: #1f4459;
+  --aipm-status-neutral: #4b4438;
+  --aipm-danger: #8a2318;
+  --aipm-marker: #b9ae9b;
+
+  --aipm-radius: 2px;
+  --aipm-radius-sm: 2px;
+  --aipm-badge-radius: 2px;
+  --aipm-button-radius: 2px;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 8px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: Georgia, "Times New Roman", "Yu Mincho", serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .08em;
+}
+
+/* ===== brutalist-utility — ported from UI Lab `brutalist` ===== */
+:root[data-aipm-theme="brutalist-utility"] {
+  color-scheme: light;
+
+  --aipm-bg: #e9e7e1;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #dedbd3;
+  --aipm-surface-sunken: #dedbd3;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #000000;
+  --aipm-muted: #4a4a4a;
+  --aipm-border: #000000;
+  --aipm-border-strong: #000000;
+  --aipm-accent: #0000ee;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #dedbd3;
+  --aipm-focus: #000000;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #003d00;
+  --aipm-status-paused: #4a3500;
+  --aipm-status-warning: #5a2f00;
+  --aipm-status-stop: #5c0d00;
+  --aipm-status-done: #000066;
+  --aipm-status-neutral: #000000;
+  --aipm-danger: #5c0d00;
+  --aipm-marker: #000000;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 14px;
+  --aipm-border-width: 3px;
+  --aipm-surface-shadow: 6px 6px 0 #000000;
+  --aipm-font-sans: "Arial Black", "Segoe UI Variable", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: "Arial Black", "Segoe UI Variable", sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .04em;
+}
+
+/* ===== monochrome-engineering — ported from UI Lab `mono-eng` ===== */
+:root[data-aipm-theme="monochrome-engineering"] {
+  color-scheme: light;
+
+  --aipm-bg: #ffffff;
+  --aipm-surface: #fbfbfb;
+  --aipm-surface-raised: #f2f2f2;
+  --aipm-surface-sunken: #f2f2f2;
+  --aipm-surface-cockpit: #fbfbfb;
+  --aipm-text: #101010;
+  --aipm-muted: #6a6a6a;
+  --aipm-border: #cfcfcf;
+  --aipm-border-strong: #101010;
+  --aipm-accent: #101010;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f2f2f2;
+  --aipm-focus: #101010;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #101010;
+  --aipm-status-paused: #3d3d3d;
+  --aipm-status-warning: #101010;
+  --aipm-status-stop: #c62828;
+  --aipm-status-done: #101010;
+  --aipm-status-neutral: #6a6a6a;
+  --aipm-danger: #c62828;
+  --aipm-marker: #101010;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 6px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Noto Sans JP", sans-serif;
+  --aipm-label-font: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .09em;
+}
+
+/* ===== scientific-instrument — ported from UI Lab `instrument` ===== */
+:root[data-aipm-theme="scientific-instrument"] {
+  color-scheme: light;
+
+  --aipm-bg: #eaeef1;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f4f7f9;
+  --aipm-surface-sunken: #f4f7f9;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #16202a;
+  --aipm-muted: #5b6b78;
+  --aipm-border: #c9d3da;
+  --aipm-border-strong: #9dabb6;
+  --aipm-accent: #0d6e8c;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f4f7f9;
+  --aipm-focus: #16202a;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #14663c;
+  --aipm-status-paused: #7a5a10;
+  --aipm-status-warning: #8a4614;
+  --aipm-status-stop: #a01f18;
+  --aipm-status-done: #17506e;
+  --aipm-status-neutral: #4a5a66;
+  --aipm-danger: #a01f18;
+  --aipm-marker: #9dabb6;
+
+  --aipm-radius: 3px;
+  --aipm-radius-sm: 2px;
+  --aipm-badge-radius: 2px;
+  --aipm-button-radius: 2px;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 12px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Noto Sans JP", sans-serif;
+  --aipm-label-font: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .11em;
+}
+
+/* ===== calm-productivity — ported from UI Lab `calm` ===== */
+:root[data-aipm-theme="calm-productivity"] {
+  color-scheme: light;
+
+  --aipm-bg: #faf6f0;
+  --aipm-surface: #fffdfa;
+  --aipm-surface-raised: #f3ede4;
+  --aipm-surface-sunken: #f3ede4;
+  --aipm-surface-cockpit: #fffdfa;
+  --aipm-text: #3a352e;
+  --aipm-muted: #8a8177;
+  --aipm-border: #e7ded1;
+  --aipm-border-strong: #e7ded1;
+  /* UI Lab ships #6a8f6f. Darkened so white control text reaches AA
+     (3.64:1 -> 6.0:1); the calm sage identity is unchanged. */
+  --aipm-accent: #4a6b4f;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f3ede4;
+  --aipm-focus: #3a352e;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #3f6b45;
+  --aipm-status-paused: #866328;
+  --aipm-status-warning: #96552c;
+  --aipm-status-stop: #9c3d33;
+  --aipm-status-done: #4a5578;
+  --aipm-status-neutral: #6b6359;
+  --aipm-danger: #9c3d33;
+  --aipm-marker: #e7ded1;
+
+  --aipm-radius: 22px;
+  --aipm-radius-sm: 16px;
+  --aipm-badge-radius: 999px;
+  --aipm-button-radius: 16px;
+  --aipm-progress-radius: 999px;
+  --aipm-progress-height: 6px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 2px 10px rgb(58 53 46 / 6%);
+  --aipm-font-sans: "Segoe UI Variable", "Segoe UI", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: 0;
+}
+
+/* ===== japanese-systems — ported from UI Lab `jp-systems` ===== */
+:root[data-aipm-theme="japanese-systems"] {
+  color-scheme: light;
+
+  --aipm-bg: #eef1f5;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #f5f7fa;
+  --aipm-surface-sunken: #f5f7fa;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #1a1f26;
+  --aipm-muted: #5c6672;
+  --aipm-border: #c4ccd6;
+  --aipm-border-strong: #93a0ad;
+  --aipm-accent: #14508c;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f5f7fa;
+  --aipm-focus: #1a1f26;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #14602f;
+  --aipm-status-paused: #7a5a11;
+  --aipm-status-warning: #8a4715;
+  --aipm-status-stop: #9e211a;
+  --aipm-status-done: #14508c;
+  --aipm-status-neutral: #454e59;
+  --aipm-danger: #9e211a;
+  --aipm-marker: #93a0ad;
+
+  --aipm-radius: 4px;
+  --aipm-radius-sm: 3px;
+  --aipm-badge-radius: 3px;
+  --aipm-button-radius: 3px;
+  --aipm-progress-radius: 1px;
+  --aipm-progress-height: 8px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+  --aipm-font-sans: "Yu Gothic UI", "Noto Sans JP", "Hiragino Kaku Gothic ProN", "Meiryo UI", sans-serif;
+  --aipm-label-font: inherit;
+  --aipm-label-transform: none;
+  --aipm-label-tracking: 0;
+}
+
+/* ===== eva-command — ported from UI Lab `eva` ===== */
+:root[data-aipm-theme="eva-command"] {
+  color-scheme: dark;
+
+  --aipm-bg: #050506;
+  --aipm-surface: #0d0d0e;
+  --aipm-surface-raised: #1b1b1d;
+  --aipm-surface-sunken: #151516;
+  --aipm-surface-cockpit: #1b1b1d;
+  --aipm-text: #f4efe5;
+  --aipm-muted: #aaa39a;
+  --aipm-border: #5b5149;
+  --aipm-border-strong: #5b5149;
+  /* Vermilion is the primary control colour EVA / Command is built on
+     (UI Lab eva.css `--red`, recorded in its README as the primary control).
+     The generic extraction had fallen back to the text colour. */
+  --aipm-accent: #d92d20;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #2b0703;
+  --aipm-focus: #f4efe5;
+  --aipm-shadow: rgb(0 0 0 / 45%);
+
+  --aipm-status-running: #79e77b;
+  --aipm-status-paused: #f4dc4f;
+  --aipm-status-warning: #ff9c55;
+  --aipm-status-stop: #ff705f;
+  --aipm-status-done: #c5b1ec;
+  --aipm-status-neutral: #e8d6c5;
+  --aipm-danger: #ff705f;
+  --aipm-marker: #5b5149;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 9px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 0 0 1px rgb(217 45 32 / 18%);
+  --aipm-font-sans: "FOT-Matisse Pro EB", "FOT-マティス Pro EB", "Matisse Pro", "Yu Mincho", "Hiragino Mincho ProN", serif;
+  --aipm-label-font: Bahnschrift, "DIN Condensed", "Arial Narrow", sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .16em;
+}
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] {
+  color-scheme: light;
+
+  --aipm-bg: #fafafa;
+  --aipm-surface: #ffffff;
+  --aipm-surface-raised: #eeeeeb;
+  --aipm-surface-sunken: #f5f5f3;
+  --aipm-surface-cockpit: #ffffff;
+  --aipm-text: #202022;
+  --aipm-muted: #767679;
+  --aipm-border: #d8d8d5;
+  --aipm-border-strong: #d8d8d5;
+  /* Same vermilion identity, darkened so white control text stays legible. */
+  --aipm-accent: #b3241a;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #f6e7e4;
+  --aipm-focus: #202022;
+  --aipm-shadow: rgb(16 24 40 / 18%);
+
+  --aipm-status-running: #4e651f;
+  --aipm-status-paused: #746519;
+  --aipm-status-warning: #8a4a20;
+  --aipm-status-stop: #8d2630;
+  --aipm-status-done: #654b76;
+  --aipm-status-neutral: #555558;
+  --aipm-danger: #8d2630;
+  --aipm-marker: #d8d8d5;
+
+  --aipm-radius: 0;
+  --aipm-radius-sm: 0;
+  --aipm-badge-radius: 0;
+  --aipm-button-radius: 0;
+  --aipm-progress-radius: 0;
+  --aipm-progress-height: 9px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: 0 0 0 1px rgb(217 45 32 / 18%);
+  --aipm-font-sans: "FOT-Matisse Pro EB", "FOT-マティス Pro EB", "Matisse Pro", "Yu Mincho", "Hiragino Mincho ProN", serif;
+  --aipm-label-font: Bahnschrift, "DIN Condensed", "Arial Narrow", sans-serif;
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: .16em;
+}
+
+/* ===== eva-restrained — production origin, values unchanged ===== */
+:root[data-aipm-theme="eva-restrained"] {
+  color-scheme: light;
+
+  --aipm-bg: #eceae5;
+  --aipm-surface: #f4f2ee;
+  --aipm-surface-raised: #e2dfd8;
+  --aipm-surface-sunken: #e6e3dd;
+  --aipm-surface-cockpit: #f8f7f4;
+  --aipm-text: #22242a;
+  --aipm-muted: #5f6169;
+  --aipm-border: #cdc9c0;
+  --aipm-border-strong: #a29d93;
+  --aipm-accent: #8a5a12;
+  --aipm-accent-text: #ffffff;
+  --aipm-accent-soft: #e4ddcd;
+  --aipm-focus: #22242a;
+  --aipm-shadow: rgb(34 36 42 / 16%);
+
+  --aipm-status-running: #1c7551;
+  --aipm-status-paused: #2d63a0;
+  --aipm-status-warning: #8a6212;
+  --aipm-status-stop: #a8332d;
+  --aipm-status-done: #1c7551;
+  --aipm-status-neutral: #6d6f77;
+  --aipm-danger: #a8332d;
+  --aipm-marker: #a29d93;
+}
+:root[data-aipm-theme="eva-restrained"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+
+  --aipm-bg: #0e0f11;
+  --aipm-surface: #15171a;
+  --aipm-surface-raised: #1e2126;
+  --aipm-surface-sunken: #121417;
+  --aipm-surface-cockpit: #1a1e23;
+  --aipm-text: #e6e8ea;
+  --aipm-muted: #9aa1a9;
+  --aipm-border: #282c32;
+  --aipm-border-strong: #434a53;
+  --aipm-accent: #c8873a;
+  --aipm-accent-text: #0e0f11;
+  --aipm-accent-soft: #241c11;
+  --aipm-focus: #e6e8ea;
+  --aipm-shadow: rgb(0 0 0 / 55%);
+
+  --aipm-status-running: #4fa07c;
+  --aipm-status-paused: #5b93cc;
+  --aipm-status-warning: #d5a03f;
+  --aipm-status-stop: #d9736b;
+  --aipm-status-done: #4fa07c;
+  --aipm-status-neutral: #8b929a;
+  --aipm-danger: #d9736b;
+  --aipm-marker: #434a53;
+}
+
+/* ================================================= reviewed product dark ==
+   These mode blocks formally declare the palette that `stance: "both"`
+   promises for the four product-style themes. Component-specific dark behavior
+   lives in manual-ux.css. Accent tokens are intentionally NOT repeated here:
+   the shared Accent axis has equal specificity and must remain able to repaint
+   customizable themes. Theme-owned dark accent defaults are applied by the
+   more-specific presentation layer when `data-aipm-accent="theme"`.
+   ========================================================================= */
+
+:root[data-aipm-theme="chatgpt-native"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+  --aipm-bg: #000000;
+  --aipm-surface: #212121;
+  --aipm-surface-raised: #2f2f2f;
+  --aipm-surface-sunken: #303030;
+  --aipm-surface-cockpit: #212121;
+  --aipm-text: #ffffff;
+  --aipm-muted: #cdcdcd;
+  --aipm-text-tertiary: #afafaf;
+  --aipm-border-soft: rgb(255 255 255 / 5%);
+  --aipm-border: rgb(255 255 255 / 10%);
+  --aipm-border-strong: rgb(255 255 255 / 15%);
+  --aipm-selected-bg: rgb(255 255 255 / 10%);
+  --aipm-input-bg: rgb(50 50 50 / 85%);
+  --aipm-hover-bg: #2f2f2f;
+  --aipm-accent-bg: #3a83f7;
+  --aipm-accent-ink: #63a8f8;
+  --aipm-focus: #63a8f8;
+  --aipm-shadow: transparent;
+  --aipm-status-running: #72d68c;
+  --aipm-status-paused: #63a8f8;
+  --aipm-status-warning: #f1a275;
+  --aipm-status-stop: #ff8583;
+  --aipm-status-done: #d9f3e1;
+  --aipm-status-neutral: #afafaf;
+  --aipm-danger: #ff8583;
+  --aipm-marker: #414141;
+}
+
+:root[data-aipm-theme="google-native"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+  --aipm-bg: #0f0f0f;
+  --aipm-surface: #1f1f1f;
+  --aipm-surface-raised: #1e1f20;
+  --aipm-surface-sunken: #171717;
+  --aipm-surface-cockpit: #1e1f20;
+  --aipm-text: #e3e3e3;
+  --aipm-secondary-text: rgb(255 255 255 / 55%);
+  --aipm-muted: #8e918f;
+  --aipm-border: rgb(255 255 255 / 12%);
+  --aipm-border-strong: rgb(255 255 255 / 20%);
+  --aipm-focus: #a8c7fa;
+  --aipm-shadow: rgb(0 0 0 / 55%);
+  --aipm-status-running: #81c995;
+  --aipm-status-paused: #8ab4f8;
+  --aipm-status-warning: #fdd663;
+  --aipm-status-stop: #f28b82;
+  --aipm-status-done: #81c995;
+  --aipm-status-neutral: #9aa0a6;
+  --aipm-danger: #f28b82;
+  --aipm-marker: rgb(255 255 255 / 20%);
+}
+
+:root[data-aipm-theme="claude-native"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+  --aipm-bg: #151515;
+  --aipm-surface: #1a1a19;
+  --aipm-surface-raised: #20201f;
+  --aipm-surface-sunken: #0b0b0b;
+  --aipm-surface-cockpit: #1a1a19;
+  --aipm-text: #f0efec;
+  --aipm-secondary-text: #c3c2b7;
+  --aipm-muted: #898781;
+  --aipm-border: rgb(255 255 255 / 10%);
+  --aipm-border-strong: rgb(255 255 255 / 20%);
+  --aipm-accent-ink: #6da7ec;
+  --aipm-focus: #6da7ec;
+  --aipm-shadow: rgb(0 0 0 / 34%);
+  --aipm-status-running: #9bd6b3;
+  --aipm-status-paused: #e3cf8f;
+  --aipm-status-warning: #edb78c;
+  --aipm-status-stop: #ec7e7e;
+  --aipm-status-done: #8bbaf2;
+  --aipm-status-neutral: #c3c2b7;
+  --aipm-danger: #ec7e7e;
+  --aipm-marker: #c6613f;
+}
+
+:root[data-aipm-theme="microsoft-fluent"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+  --aipm-bg: #202020;
+  --aipm-surface: #2b2b2b;
+  --aipm-surface-raised: #323232;
+  --aipm-surface-sunken: #1b1b1b;
+  --aipm-surface-cockpit: #2d2d2d;
+  --aipm-text: #f5f5f5;
+  --aipm-muted: #c8c8c8;
+  --aipm-border: #454545;
+  --aipm-border-strong: #5a5a5a;
+  --aipm-focus: #ffffff;
+  --aipm-shadow: rgb(0 0 0 / 55%);
+  --aipm-status-running: #6ccb5f;
+  --aipm-status-paused: #60cdff;
+  --aipm-status-warning: #fce100;
+  --aipm-status-stop: #ff99a4;
+  --aipm-status-done: #6ccb5f;
+  --aipm-status-neutral: #c8c8c8;
+  --aipm-danger: #ff99a4;
+  --aipm-marker: #5a5a5a;
+}
+
+:root[data-aipm-theme="apple-utility"][data-aipm-mode="dark"] {
+  color-scheme: dark;
+  --aipm-bg: #000000;
+  --aipm-surface: #1c1c1e;
+  --aipm-surface-raised: #2c2c2e;
+  --aipm-surface-sunken: #111113;
+  --aipm-surface-cockpit: #1c1c1e;
+  --aipm-text: #ffffff;
+  --aipm-muted: #98989d;
+  --aipm-border: #38383a;
+  --aipm-border-strong: #48484a;
+  --aipm-focus: #ffffff;
+  --aipm-shadow: rgb(0 0 0 / 55%);
+  --aipm-status-running: #30d158;
+  --aipm-status-paused: #64d2ff;
+  --aipm-status-warning: #ff9f0a;
+  --aipm-status-stop: #ff453a;
+  --aipm-status-done: #30d158;
+  --aipm-status-neutral: #98989d;
+  --aipm-danger: #ff453a;
+  --aipm-marker: #48484a;
+}
+
+/* ======================================================= visual signatures ==
+
+   A few designs carry an identity that no token can express. Each rule below is
+   scoped to one theme, targets presentation only, and adds no DOM. Generated
+   content is decoration: it never replaces a text label, and `content` is not
+   part of `textContent`, so nothing that reads status text is affected.
+   ========================================================================= */
+
+/* Modern Terminal — a console prints its states inside brackets. */
+:root[data-aipm-theme="modern-terminal"] .run-state-badge::before,
+:root[data-aipm-theme="modern-terminal"] .status-badge::before { content: "["; }
+:root[data-aipm-theme="modern-terminal"] .run-state-badge::after,
+:root[data-aipm-theme="modern-terminal"] .status-badge::after { content: "]"; }
+
+/* Scientific Instrument — progress is a graduated scale, not a plain bar. */
+:root[data-aipm-theme="scientific-instrument"] .progress-track,
+:root[data-aipm-theme="scientific-instrument"] .run-row-track {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--aipm-border-strong) 0 1px,
+    transparent 1px 10%
+  );
+}
+
+/* Industrial Control — a machine panel reads its own bar as hatched plate. */
+:root[data-aipm-theme="industrial-control"] .progress-bar,
+:root[data-aipm-theme="industrial-control"] .progress-fill {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgb(255 255 255 / 22%) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+/* Brutalist Utility — the frame is the structure, so it casts a hard offset. */
+:root[data-aipm-theme="brutalist-utility"] .run-card {
+  box-shadow: var(--aipm-surface-shadow);
+}
+
+/* ============================================== eva-command hex ornament ==
+
+   Ported from the UI Lab field design: flat-top hexagons
+   whose height is width * sqrt(3)/2, each built from four nested clipped
+   layers so the outline reads as a double border, with the tile marks in the
+   centre. The tiles are clustered against three edges rather than tiled across
+   the surface, which is what makes it read as command-wall framing instead of
+   wallpaper.
+
+   The ornament stays monochrome. That is the UI Lab's own decision: its
+   stylesheet notes that the tone classes resolve to grey steps and the names
+   remain only for layout compatibility.
+
+   The nodes come from themes/decoration.js, which guarantees a single root, no
+   focusable content and removal on theme switch. Everything below is scoped to
+   eva-command as well, so a leaked node would still render nothing.
+   ========================================================================= */
+
+.aipm-theme-decoration { display: none; }
+
+:root[data-aipm-theme="eva-command"] .aipm-theme-decoration {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  /* Clips the tiles that hang past an edge, so the ornament can never widen the
+     document or introduce a horizontal scrollbar. */
+  overflow: hidden;
+  opacity: .9;
+}
+
+/* Functional content always paints above the ornament. */
+:root[data-aipm-theme="eva-command"] body > *:not(.aipm-theme-decoration) {
+  position: relative;
+  z-index: 1;
+}
+
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile {
+  --hex-size: 56px;
+  --hex-border: #55555a;
+  --hex-inner-border: #46464a;
+  --hex-inner: #252527;
+  position: absolute;
+  left: var(--hx);
+  top: var(--hy);
+  width: var(--hex-size);
+  height: calc(var(--hex-size) * .8660254038);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  background: var(--hex-border);
+  filter: drop-shadow(0 1px 0 #080809);
+}
+
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--hex-size) - 6px);
+  height: calc((var(--hex-size) - 6px) * .8660254038);
+  transform: translate(-50%, -50%);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+  background: #0a0a0b;
+}
+
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile > i,
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile > i::before {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0 50%);
+}
+
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile > i {
+  width: calc(var(--hex-size) - 10px);
+  height: calc((var(--hex-size) - 10px) * .8660254038);
+  background: var(--hex-inner-border);
+}
+
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile > i::before {
+  content: "";
+  width: calc(var(--hex-size) - 14px);
+  height: calc((var(--hex-size) - 14px) * .8660254038);
+  background: var(--hex-inner);
+}
+
+/* The paired tile marks at the centre of each tile. */
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile::after {
+  content: "\25B2\A\25BC";
+  white-space: pre;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: #09090a;
+  font: 900 11px/1.65 Bahnschrift, "Arial Narrow", sans-serif;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+/* Four grey steps. Monochrome by design, exactly as in the UI Lab. */
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile.tone-dim { --hex-border: #444448; --hex-inner: #202022; }
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile.tone-red { --hex-border: #606066; --hex-inner: #2b2b2e; }
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile.tone-violet { --hex-border: #505055; --hex-inner: #242426; }
+:root[data-aipm-theme="eva-command"] .aipm-hex-tile.tone-green { --hex-border: #69696f; --hex-inner: #303033; }
+
+/* The light stance keeps the same field at a paler, lower-contrast weight. */
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] .aipm-hex-tile {
+  --hex-border: #d5d5d1;
+  --hex-inner-border: #e2e2de;
+  --hex-inner: #eeeeea;
+  filter: none;
+}
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] .aipm-hex-tile::before { background: #f6f6f3; }
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] .aipm-hex-tile::after { color: #e4e4e0; }
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] .aipm-hex-tile.tone-dim { --hex-border: #dedede; --hex-inner: #f2f2ef; }
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] .aipm-hex-tile.tone-red { --hex-border: #cccccb; --hex-inner: #eaeae6; }
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] .aipm-hex-tile.tone-violet { --hex-border: #d4d4d2; --hex-inner: #efefec; }
+:root[data-aipm-theme="eva-command"][data-aipm-mode="light"] .aipm-hex-tile.tone-green { --hex-border: #c6c6c4; --hex-inner: #e7e7e3; }

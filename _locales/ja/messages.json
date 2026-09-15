@@ -1,0 +1,10 @@
+{
+  "extensionName": {
+    "message": "AI Prompt Macro",
+    "description": "拡張機能名"
+  },
+  "extensionDescription": {
+    "message": "ChatGPTの回答本文を読まず、選択したタブへ事前に決めた指示を順番に送る拡張です。1回の実行で自動送信は最大50回です。",
+    "description": "Edgeアドオン一覧に表示する説明"
+  }
+}

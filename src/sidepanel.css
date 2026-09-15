@@ -1,0 +1,743 @@
+/*
+  Side Panel — Run Cockpit.
+
+  Reads the shared appearance seam in ui-tokens.css and nothing else. Every
+  colour, space and type size here resolves to a token, so the Side Panel, the
+  Workspace and Settings stay one visual language rather than three.
+
+  Presentation only. No rule in this file is consulted when deciding whether a
+  Run may start, resume, send or stop; those come from durable Run facts. A
+  status colour is always accompanied by a status text label, so meaning never
+  depends on colour, on the active theme, or on the accent.
+*/
+
+/* ------------------------------------------------------------------ base */
+
+:root {
+  font-family: var(--aipm-font-sans);
+  background: var(--aipm-bg);
+  color: var(--aipm-text);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-width: 0;
+  background: var(--aipm-bg);
+  color: var(--aipm-text);
+  font-size: var(--aipm-font-size);
+}
+
+/*
+  Compatibility DOM safety net.
+
+  The Phase 4D inert authoring block, and several progressive-disclosure nodes,
+  rely on the `hidden` attribute. Layout rules such as `display: grid` outrank
+  the user-agent `[hidden]` rule, so without this a purely visual change could
+  reveal inert controls. Kept first and deliberately `!important`.
+*/
+[hidden] { display: none !important; }
+.hidden { display: none !important; }
+
+/* The lightweight Flow entry shares the existing editor/compiler. */
+.entry-modes { display: grid; grid-template-columns: 1fr 1fr; gap: var(--aipm-space-2); }
+.entry-modes [aria-pressed="true"] { border-color: var(--aipm-accent); background: var(--aipm-surface-raised); }
+.flow-guide-body { display: grid; gap: var(--aipm-space-2); padding-top: var(--aipm-space-2); }
+.flow-guide summary { cursor: pointer; }
+.disclosure-body { display: grid; gap: var(--aipm-space-2); padding-top: var(--aipm-space-2); min-width: 0; }
+.flow-counts { margin: 0; }
+.hint:empty { display: none; }
+.flow-plan-steps { margin: 0; padding-left: 1.5em; }
+.flow-plan-steps li { margin-block: var(--aipm-space-2); overflow-wrap: anywhere; }
+.flow-plan-steps summary { font-weight: 600; }
+.flow-plan-steps pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+#flowPreviewTarget, #flowSavedRange, #flowInputStatus { overflow-wrap: anywhere; }
+.run-card[data-active="true"] { position: sticky; top: 0; z-index: 2; }
+#start { grid-column: 1 / -1; }
+
+main {
+  padding: var(--aipm-space-3);
+  display: grid;
+  gap: var(--aipm-space-2);
+}
+
+/* ------------------------------------------------------------ typography */
+
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--aipm-space-3);
+}
+.header-actions { display: flex; gap: var(--aipm-space-1); flex: 0 0 auto; }
+
+h1 {
+  margin: 2px 0 0;
+  font-size: var(--aipm-font-title);
+  line-height: 1.15;
+  letter-spacing: -.01em;
+}
+
+/* Small technical label. Monospaced and letterspaced so it reads as an
+   instrument marking rather than as body copy. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--aipm-label-font);
+  font-size: var(--aipm-font-label);
+  letter-spacing: var(--aipm-label-tracking);
+  text-transform: var(--aipm-label-transform);
+  color: var(--aipm-muted);
+}
+/* Restrained angular marker, drawn in CSS so no glyph or font file is needed.
+   Decoration only: it is not in the accessibility tree and carries no data. */
+.eyebrow::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  background: var(--aipm-marker);
+  transform: rotate(45deg);
+}
+
+label {
+  font-size: var(--aipm-font-body);
+  font-weight: 650;
+  color: var(--aipm-text);
+}
+.hint {
+  margin: 2px 0 0;
+  font-size: var(--aipm-font-meta);
+  line-height: 1.45;
+  color: var(--aipm-muted);
+}
+code { font-family: var(--aipm-font-mono); }
+
+/* ----------------------------------------------------------------- cards */
+
+.card {
+  border: var(--aipm-border-width) solid var(--aipm-border);
+  border-radius: var(--aipm-radius);
+  box-shadow: var(--aipm-surface-shadow);
+  padding: var(--aipm-space-3);
+  display: grid;
+  gap: var(--aipm-space-2);
+  background: var(--aipm-surface);
+  min-width: 0;
+}
+.compact { gap: var(--aipm-space-2); }
+
+.section-heading {
+  margin-top: 2px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--aipm-space-2);
+}
+.section-heading strong { font-size: var(--aipm-font-section); }
+
+.row { display: flex; align-items: center; gap: var(--aipm-space-2); }
+.between { justify-content: space-between; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--aipm-density-gap); }
+.grid2 > div { display: grid; gap: var(--aipm-space-1); min-width: 0; }
+.grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.grid3 > div { display: grid; gap: var(--aipm-space-1); min-width: 0; }
+
+/* -------------------------------------------------------------- controls */
+
+textarea, input, select {
+  width: 100%;
+  min-width: 0;
+  border: var(--aipm-border-width) solid var(--aipm-border);
+  border-radius: var(--aipm-button-radius);
+  background: var(--aipm-bg);
+  color: var(--aipm-text);
+  padding: var(--aipm-space-2) 9px;
+  font: inherit;
+}
+textarea { resize: vertical; min-height: 105px; line-height: 1.45; }
+#quickPrompt { min-height: 76px; }
+#flowText { min-height: 94px; }
+#flowGoal { min-height: 60px; }
+
+/*
+  Button hierarchy.
+
+    .primary    Start / Resume  — the one action that moves the Run forward
+    (default)   Pause           — reversible, secondary
+    .danger     Stop            — destructive, marked by outline not by fill
+    .small      utility         — Refresh / Workspace / Settings
+
+  Stop is deliberately NOT filled: a saturated block would compete with the
+  primary action for attention on every screen, and the theme accent is kept
+  away from destructive controls entirely.
+*/
+button {
+  border: var(--aipm-border-width) solid var(--aipm-border-strong);
+  border-radius: var(--aipm-button-radius);
+  padding: var(--aipm-space-2) 10px;
+  background: var(--aipm-bg);
+  color: var(--aipm-text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+button:hover:not(:disabled) { background: var(--aipm-surface-raised); }
+
+button.primary {
+  background: var(--aipm-accent);
+  color: var(--aipm-accent-text);
+  border-color: transparent;
+}
+button.primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--aipm-accent) 86%, var(--aipm-text));
+}
+
+button.danger {
+  color: var(--aipm-status-stop);
+  border-color: color-mix(in srgb, var(--aipm-status-stop) 55%, transparent);
+}
+button.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--aipm-status-stop) 12%, var(--aipm-bg));
+}
+
+/* Disabled state is carried by four independent signals — fill, text colour,
+   border and cursor — so it never depends on colour perception alone. */
+button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  background: var(--aipm-surface-sunken);
+  color: var(--aipm-muted);
+  border-color: var(--aipm-border);
+}
+button.primary:disabled, button.danger:disabled { border-style: dashed; }
+
+button.small { padding: 6px var(--aipm-space-2); font-size: 11px; min-height: 34px; }
+.icon-button { min-width: 32px; min-height: 32px; padding: var(--aipm-space-1); font-size: 12px; }
+
+.badge {
+  border: var(--aipm-border-width) solid var(--aipm-border);
+  border-radius: var(--aipm-badge-radius);
+  padding: 5px var(--aipm-space-2);
+  font-size: var(--aipm-font-meta);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.tab { opacity: .65; }
+.tab.active { opacity: 1; background: var(--aipm-surface-raised); border-color: var(--aipm-border-strong); }
+
+summary { cursor: pointer; font-size: var(--aipm-font-body); font-weight: 750; min-height: 32px; align-content: center; }
+summary:focus-visible { outline: 2px solid var(--aipm-accent); outline-offset: 2px; }
+
+/* ========================================================== Run cockpit ==
+   Priority 2-6 of the Side Panel hierarchy live in this card.
+   ======================================================================= */
+
+.run-card {
+  align-self: start;
+  border-width: 2px;
+  background: var(--aipm-surface-cockpit);
+  box-shadow: 0 7px 22px var(--aipm-shadow);
+}
+.run-card[data-compact="true"] { border-width: 1px; box-shadow: none; }
+.run-card #runDetails { padding-top: 0; }
+.run-card #runGuidance { padding-top: 0; }
+/* Long checkpoint labels remain readable without pushing Stop off screen. */
+.run-card[data-active="true"] #runGuidance { max-height: max(80px, calc(100dvh - 190px)); overflow-y: auto; }
+
+/* 2 — Status. The most visible element on the surface. */
+.run-summary { display: flex; align-items: center; justify-content: space-between; gap: var(--aipm-density-gap); }
+.run-status { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.run-status-caption {
+  font-family: var(--aipm-label-font);
+  font-size: var(--aipm-font-label);
+  font-weight: 700;
+  letter-spacing: var(--aipm-label-tracking);
+  text-transform: var(--aipm-label-transform);
+  color: var(--aipm-muted);
+  white-space: nowrap;
+}
+.run-state-badge {
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 10px;
+  border-color: var(--aipm-border-strong);
+  border-radius: var(--aipm-badge-radius);
+}
+
+/* 3 — Progress. Current value first, then the bar. */
+.run-progress-value {
+  font-size: var(--aipm-font-value);
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.progress-track {
+  height: var(--aipm-progress-height);
+  border-radius: var(--aipm-progress-radius);
+  overflow: hidden;
+  background: var(--aipm-surface-sunken);
+  border: var(--aipm-border-width) solid var(--aipm-border);
+}
+.progress-bar { width: 0%; height: 100%; background: var(--aipm-accent); transition: width .2s ease; }
+
+/*
+  Status is expressed on three carriers at once: the badge text (authoritative),
+  the badge tint, and the card border. Colour is never alone, so the meaning
+  survives any theme, any accent and any colour-vision difference.
+*/
+.run-card[data-state="running"] { border-color: var(--aipm-status-running); }
+.run-card[data-state="user-paused"] { border-color: var(--aipm-status-paused); }
+.run-card[data-state="confirmation-required"] { border-color: var(--aipm-status-warning); }
+.run-card[data-state="fail-closed"] { border-color: var(--aipm-status-stop); }
+.run-card[data-state="completed"] { border-color: color-mix(in srgb, var(--aipm-status-done) 60%, var(--aipm-border)); }
+
+.run-state-badge[data-state="running"] {
+  background: color-mix(in srgb, var(--aipm-status-running) 18%, var(--aipm-bg));
+  border-color: color-mix(in srgb, var(--aipm-status-running) 60%, transparent);
+}
+.run-state-badge[data-state="user-paused"] {
+  background: color-mix(in srgb, var(--aipm-status-paused) 18%, var(--aipm-bg));
+  border-color: color-mix(in srgb, var(--aipm-status-paused) 60%, transparent);
+}
+.run-state-badge[data-state="confirmation-required"] {
+  background: color-mix(in srgb, var(--aipm-status-warning) 20%, var(--aipm-bg));
+  border-color: color-mix(in srgb, var(--aipm-status-warning) 60%, transparent);
+}
+.run-state-badge[data-state="fail-closed"] {
+  background: color-mix(in srgb, var(--aipm-status-stop) 18%, var(--aipm-bg));
+  border-color: color-mix(in srgb, var(--aipm-status-stop) 60%, transparent);
+}
+.run-state-badge[data-state="completed"] {
+  background: color-mix(in srgb, var(--aipm-status-done) 14%, var(--aipm-bg));
+  border-color: color-mix(in srgb, var(--aipm-status-done) 45%, transparent);
+}
+
+.connection-status { margin: 0; font-size: var(--aipm-font-meta); line-height: 1.4; color: var(--aipm-muted); }
+/* An unverified connection is promoted to full-strength text rather than being
+   tinted, so it stays legible without adding another colour to the surface. */
+.connection-status[data-connection="unknown"],
+.connection-status[data-connection="unavailable"],
+.connection-status[data-connection="blocked"] { color: var(--aipm-text); font-weight: 700; }
+
+.completion-outcome {
+  margin: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--aipm-border);
+  border-left-width: 3px;
+  border-radius: var(--aipm-radius-sm);
+  font-size: var(--aipm-font-meta);
+  font-weight: 750;
+  line-height: 1.4;
+  background: var(--aipm-surface-sunken);
+}
+.completion-outcome[data-outcome="completed"] { border-left-color: var(--aipm-status-done); }
+.completion-outcome[data-outcome="fail-closed"] { border-left-color: var(--aipm-status-stop); }
+.completion-outcome[data-outcome="confirmation"] { border-left-color: var(--aipm-status-warning); }
+.completion-outcome[data-outcome="running"] { border-left-color: var(--aipm-status-running); }
+.completion-outcome[data-outcome="paused"] { border-left-color: var(--aipm-status-paused); }
+
+/* 4 and 5 — Reason, then Next action as a separate block. */
+.cockpit-guidance { display: grid; gap: var(--aipm-space-1); }
+.guidance-label {
+  margin: 2px 0 0;
+  font-family: var(--aipm-label-font);
+  font-size: var(--aipm-font-label);
+  font-weight: 700;
+  letter-spacing: var(--aipm-label-tracking);
+  text-transform: var(--aipm-label-transform);
+  color: var(--aipm-muted);
+}
+#message { margin: 0; font-size: var(--aipm-font-meta); line-height: 1.5; color: var(--aipm-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.next-action {
+  margin: 0;
+  padding: var(--aipm-space-2) 9px;
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-bg);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--aipm-text);
+}
+
+/* Run controls retain three usable targets even at 320px. Start follows input. */
+.actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.actions button { padding-inline: 5px; font-size: 12px; min-height: 36px; }
+
+/* ---------------------------------------------------------- target card */
+
+.target-card select { min-width: 0; }
+.target-status-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.target-status-row > .hint { min-width: 0; }
+#targetTechnicalDetails { flex: 0 0 auto; }
+#targetTechnicalDetails[open] { flex: 1; }
+#targetTechnicalInfo { white-space: pre-line; overflow-wrap: anywhere; }
+#targetCard[data-target-state="selected"] { border-inline-start: 3px solid var(--aipm-accent); }
+#targetCard[data-target-state="selected-displayed"] { border-inline-start: 5px solid var(--aipm-accent); }
+#targetCard[data-target-state="displayed"] { border-inline-start: 2px solid var(--aipm-border); }
+.target-presentation-summary {
+  --target-marker: var(--aipm-status-neutral);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--aipm-space-2);
+  align-items: center;
+  min-width: 0;
+  padding: var(--aipm-space-2) 9px;
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface-sunken);
+}
+.target-presentation-summary[hidden] { display: none; }
+/* Tab identity colours. A user-chosen label for telling tabs apart — never a
+   status, and never read as one. */
+.target-presentation-summary[data-color="blue"] { --target-marker: #3978c5; }
+.target-presentation-summary[data-color="green"] { --target-marker: #16855b; }
+.target-presentation-summary[data-color="yellow"] { --target-marker: #b88a00; }
+.target-presentation-summary[data-color="orange"] { --target-marker: #d06b16; }
+.target-presentation-summary[data-color="red"] { --target-marker: #c63c3c; }
+.target-presentation-summary[data-color="purple"] { --target-marker: #8557c7; }
+.target-color-marker {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--aipm-bg);
+  border-radius: var(--aipm-radius-pill);
+  background: var(--target-marker);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--target-marker) 65%, var(--aipm-text));
+}
+.target-presentation-copy { display: grid; gap: 2px; min-width: 0; }
+.target-presentation-heading { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.target-presentation-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.target-presentation-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--aipm-font-label);
+  color: var(--aipm-muted);
+}
+.target-group-chip {
+  flex: 0 1 auto;
+  max-width: 44%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 6px;
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-pill);
+  font-size: var(--aipm-font-label);
+  font-weight: 700;
+}
+.target-presentation-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(88px, .6fr);
+  gap: 7px;
+}
+.target-presentation-fields label { display: grid; gap: var(--aipm-space-1); min-width: 0; }
+.target-presentation-fields input,
+.target-presentation-fields select { min-width: 0; }
+.target-group-field { grid-column: 1 / -1; }
+
+.power-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: var(--aipm-space-2);
+  align-items: center;
+  min-height: 32px;
+  cursor: pointer;
+}
+.power-option input { width: auto; margin: 2px 0 0; }
+.power-option span { display: grid; gap: 2px; }
+.power-option strong { font-size: 11px; }
+.power-option small { font-size: var(--aipm-font-label); line-height: 1.35; font-weight: 500; color: var(--aipm-muted); }
+
+/* ------------------------------------------------------ saved automation */
+
+.saved-automation-card { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px; font-size: var(--aipm-font-meta); }
+.saved-automation-card[data-attention="true"] { border-color: var(--aipm-status-warning); }
+.saved-automation-heading > div { display: grid; gap: 3px; min-width: 0; }
+.saved-automation-heading strong { overflow-wrap: anywhere; font-size: var(--aipm-font-section); }
+.saved-automation-summary {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: inherit;
+}
+
+/* ------------------------------------------------------------- recovery */
+
+.recovery-advanced {
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  padding: var(--aipm-space-2) 9px;
+}
+.recovery-advanced > .grid3 { margin-top: var(--aipm-space-2); }
+.warning-note {
+  margin: 0;
+  padding: var(--aipm-space-2) 9px;
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface-sunken);
+  font-size: var(--aipm-font-meta);
+  line-height: 1.5;
+  color: var(--aipm-muted);
+}
+.runtime-warning {
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--aipm-status-warning) 58%, var(--aipm-border));
+  border-left-width: 4px;
+  border-radius: var(--aipm-radius-sm);
+  background: color-mix(in srgb, var(--aipm-status-warning) 10%, var(--aipm-surface-sunken));
+  color: var(--aipm-text);
+  font-size: var(--aipm-font-meta);
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------ authoring */
+
+.block-toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.steps { display: grid; gap: 14px; counter-reset: blocks; }
+.step {
+  position: relative;
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  padding: 10px;
+  display: grid;
+  gap: var(--aipm-space-2);
+  background: var(--aipm-bg);
+}
+.step:not(:last-child)::after {
+  content: "↓";
+  position: absolute;
+  left: 50%;
+  bottom: -15px;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: var(--aipm-muted);
+  pointer-events: none;
+}
+.step.dragging { opacity: .48; }
+.step.drop-target { outline: 2px solid var(--aipm-border-strong); outline-offset: 2px; }
+.step-head { display: flex; align-items: center; justify-content: space-between; gap: var(--aipm-space-2); }
+.step-title-wrap { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.step-number {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--aipm-radius-pill);
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  font-family: var(--aipm-font-mono);
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--aipm-surface-raised);
+}
+.step-title {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  color: var(--aipm-muted);
+}
+.step-actions { display: flex; gap: var(--aipm-space-1); }
+.step-body { display: grid; gap: var(--aipm-space-2); }
+.step-controls { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.step textarea { min-height: 82px; }
+.step-note { margin: 0; font-size: var(--aipm-font-meta); line-height: 1.4; color: var(--aipm-muted); }
+
+/* Block kind is carried by the left rule pattern as well as the title text. */
+.type-prompt { border-left: 3px solid var(--aipm-border-strong); }
+.type-wait-until { border-left: 3px dashed var(--aipm-border-strong); }
+.type-delay { border-left: 3px dotted var(--aipm-border-strong); }
+.type-checkpoint { border-left: 3px double var(--aipm-border-strong); }
+
+.flow-heading > div { min-width: 0; }
+.flow-editor {
+  min-height: 260px;
+  font-family: var(--aipm-font-mono);
+  font-size: 11px;
+  tab-size: 2;
+}
+.flow-preview {
+  display: grid;
+  gap: 7px;
+  padding: var(--aipm-density-gap);
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface-sunken);
+}
+.flow-preview > strong { font-size: 11px; }
+.flow-preview dl { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0; }
+.flow-preview dl > div {
+  min-width: 0;
+  padding: 7px var(--aipm-space-2);
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-bg);
+}
+.flow-preview dt {
+  font-family: var(--aipm-font-mono);
+  font-size: var(--aipm-font-label);
+  letter-spacing: .04em;
+  color: var(--aipm-muted);
+}
+.flow-preview dd { margin: 2px 0 0; font-size: var(--aipm-font-meta); font-weight: 700; overflow-wrap: anywhere; }
+.flow-start-reason {
+  margin: 0;
+  padding: var(--aipm-space-2) 9px;
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface-sunken);
+  font-size: var(--aipm-font-meta);
+  line-height: 1.45;
+}
+.flow-library, .flow-import-export {
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  padding: var(--aipm-density-gap);
+}
+.flow-library-body { display: grid; gap: 7px; margin-top: var(--aipm-density-gap); }
+.library-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.favorite-option {
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: var(--aipm-space-2);
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface-sunken);
+}
+.favorite-option input { width: auto; }
+.file-button {
+  display: grid;
+  place-items: center;
+  min-height: 34px;
+  padding: 6px var(--aipm-space-2);
+  border: 1px solid var(--aipm-border-strong);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-bg);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+#flowImportFile { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.flow-execution-controls {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: var(--aipm-density-gap);
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-sm);
+}
+.flow-execution-controls legend { padding: 0 5px; font-size: 11px; font-weight: 750; }
+
+.editor-state-notice {
+  margin: 0;
+  padding: var(--aipm-space-2) 9px;
+  border: 1px solid color-mix(in srgb, var(--aipm-status-warning) 52%, transparent);
+  border-left-width: 3px;
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface-sunken);
+  font-size: var(--aipm-font-meta);
+  line-height: 1.45;
+  color: var(--aipm-text);
+}
+.flow-error {
+  margin: 0;
+  padding: var(--aipm-space-2) 9px;
+  border: 1px solid color-mix(in srgb, var(--aipm-status-stop) 48%, transparent);
+  border-left-width: 3px;
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface-sunken);
+  font-size: var(--aipm-font-meta);
+  line-height: 1.45;
+  color: var(--aipm-status-stop);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------------------------------------------------------- diagnostics
+   Deliberately quieter than the Run status above it: smaller type, no accent,
+   flat surface. Technical codes stay behind the native details element so the
+   primary hierarchy is never displaced by developer detail. */
+
+pre {
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  font-family: var(--aipm-font-mono);
+  font-size: var(--aipm-font-code);
+  color: var(--aipm-muted);
+}
+.diagnostics-card { gap: 7px; background: var(--aipm-surface); }
+.diagnostics-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--aipm-density-gap); }
+.diagnostics-heading h2 { margin: 0; font-size: var(--aipm-font-section); }
+.diagnostics-title { font-size: 11px; line-height: 1.4; }
+.diagnostics-summary,
+.diagnostics-safety { margin: 0; font-size: var(--aipm-font-meta); line-height: 1.45; overflow-wrap: anywhere; }
+.diagnostics-safety { color: var(--aipm-muted); }
+.diagnostics-advanced { border-top: 1px solid var(--aipm-border); padding-top: 7px; }
+.diagnostics-advanced > h3 {
+  margin: var(--aipm-density-gap) 0 5px;
+  font-family: var(--aipm-font-mono);
+  font-size: var(--aipm-font-label);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--aipm-muted);
+}
+.diagnostics-details {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: var(--aipm-space-1) var(--aipm-space-2);
+  margin: var(--aipm-space-2) 0 0;
+  font-size: var(--aipm-font-code);
+}
+.diagnostics-details > div { display: contents; }
+.diagnostics-details dt { color: var(--aipm-muted); }
+.diagnostics-details dd { margin: 0; overflow-wrap: anywhere; font-family: var(--aipm-font-mono); }
+.diagnostics-events { list-style: none; display: grid; gap: var(--aipm-space-1); margin: 0; padding: 0; max-height: 180px; overflow: auto; }
+.diagnostics-events li {
+  padding-top: var(--aipm-space-1);
+  border-top: 1px solid var(--aipm-border);
+  font-size: var(--aipm-font-code);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.diagnostics-card [data-severity="attention"] { border-color: color-mix(in srgb, var(--aipm-status-warning) 55%, transparent); }
+.diagnostics-card [data-severity="safety-stop"] { border-color: color-mix(in srgb, var(--aipm-status-stop) 55%, transparent); }
+
+/* ------------------------------------------------------------ responsive */
+
+@media (max-width: 380px) {
+  main { padding: var(--aipm-space-3); }
+  .actions { gap: var(--aipm-space-2); }
+  .actions button { padding-inline: 7px; font-size: 12px; min-height: 40px; }
+  .run-summary { flex-wrap: wrap; }
+  .run-progress-value { align-self: stretch; text-align: left; overflow-wrap: anywhere; }
+  .grid2, .grid3, .step-controls { grid-template-columns: 1fr; }
+  #quickPanel .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .block-toolbar { grid-template-columns: 1fr; }
+  .tabs, .flow-preview dl { grid-template-columns: 1fr; }
+  .flow-heading { align-items: flex-start; flex-direction: column; }
+  .library-actions { grid-template-columns: 1fr 1fr; }
+  .target-presentation-fields { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: 18px; }
+}
+
+@media (min-width: 381px) and (max-width: 480px) {
+  main { padding-inline: var(--aipm-space-3); }
+  .actions button { min-height: 40px; }
+}

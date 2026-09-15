@@ -1,0 +1,190 @@
+/*
+  Settings page. Consumes the shared appearance seam in ui-tokens.css only.
+
+  The page is a set of labelled groups rather than a flat list of inputs:
+  Appearance, Defaults, Recovery, Diagnostics, Data. Grouping is what keeps a
+  settings surface from reading as a form dump.
+
+  Nothing here can influence a Run. Every control on this page writes to
+  `aipm.settings.v1`, which describes what a FUTURE Run should be created with.
+*/
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--aipm-bg);
+  color: var(--aipm-text);
+  font-family: var(--aipm-font-sans);
+  font-size: var(--aipm-font-size);
+  line-height: 1.7;
+}
+
+[hidden] { display: none !important; }
+
+.page {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: calc(var(--aipm-density-space) * 2) var(--aipm-density-space);
+  display: grid;
+  gap: calc(var(--aipm-density-space) * 1.5);
+}
+
+/* While settings are still loading, controls are inert and must not be read as
+   confirmed stored values. */
+.page[aria-busy="true"] .card { opacity: .55; }
+.page[aria-busy="true"] input,
+.page[aria-busy="true"] select,
+.page[aria-busy="true"] button { pointer-events: none; }
+
+/* ------------------------------------------------------------ typography */
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--aipm-density-space);
+  flex-wrap: wrap;
+  padding-bottom: var(--aipm-space-2);
+  border-bottom: 1px solid var(--aipm-border);
+}
+
+/* Small technical label with the same restrained angular marker the Side Panel
+   and Workspace use. Decoration only, and not in the accessibility tree. */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-family: var(--aipm-label-font);
+  font-size: var(--aipm-font-label);
+  letter-spacing: var(--aipm-label-tracking);
+  text-transform: var(--aipm-label-transform);
+  color: var(--aipm-muted);
+}
+.eyebrow::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  background: var(--aipm-marker);
+  transform: rotate(45deg);
+}
+
+h1 { margin: 2px 0 0; font-size: 24px; line-height: 1.25; letter-spacing: -.01em; }
+h2 { margin: 0; font-size: var(--aipm-font-section); line-height: 1.4; }
+
+.card-heading { display: grid; gap: 2px; }
+
+.save-status {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--aipm-border);
+  border-radius: var(--aipm-radius-pill);
+  color: var(--aipm-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.save-status[data-state="saving"] { color: var(--aipm-text); }
+.save-status[data-state="saved"] { color: var(--aipm-text); border-color: var(--aipm-border-strong); }
+/* Save failure is carried by the word as well as the colour. */
+.save-status[data-state="error"] {
+  color: var(--aipm-status-stop);
+  border-color: color-mix(in srgb, var(--aipm-status-stop) 55%, transparent);
+  font-weight: 700;
+}
+
+.scope-note {
+  margin: 0;
+  padding: var(--aipm-density-pad);
+  border: 1px solid var(--aipm-border);
+  border-left: 3px solid var(--aipm-border-strong);
+  border-radius: var(--aipm-radius-sm);
+  background: var(--aipm-surface);
+  color: var(--aipm-muted);
+  font-size: 12px;
+}
+.scope-note strong { color: var(--aipm-text); }
+
+/* ----------------------------------------------------------------- cards */
+
+.card {
+  display: grid;
+  gap: var(--aipm-density-gap);
+  padding: var(--aipm-density-pad);
+  border: var(--aipm-border-width) solid var(--aipm-border);
+  border-radius: var(--aipm-radius);
+  background: var(--aipm-surface);
+  box-shadow: var(--aipm-surface-shadow);
+}
+
+.section-note {
+  margin: 0;
+  color: var(--aipm-muted);
+  font-size: 11px;
+}
+.section-note strong { color: var(--aipm-text); }
+
+/* Two related controls sit side by side on a wide page and stack on a narrow
+   one, so a group reads as a group instead of a column of unrelated rows. */
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--aipm-density-gap) var(--aipm-density-space);
+}
+
+.field { display: grid; gap: 5px; min-width: 0; align-content: start; }
+.field > label { font-size: 12px; font-weight: 650; }
+
+.checkbox-field > label {
+  display: flex;
+  align-items: center;
+  gap: var(--aipm-space-2);
+  font-weight: 650;
+  cursor: pointer;
+}
+.checkbox-field input { width: auto; min-height: 0; }
+
+/* -------------------------------------------------------------- controls */
+
+input, select, button {
+  width: 100%;
+  min-height: var(--aipm-control-height);
+  padding: 7px 9px;
+  border: var(--aipm-border-width) solid var(--aipm-border-strong);
+  border-radius: var(--aipm-button-radius);
+  background: var(--aipm-bg);
+  color: var(--aipm-text);
+  font: inherit;
+}
+button { font-weight: 700; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--aipm-surface-raised); }
+
+/* Disabled state is carried by fill, text colour, border style and cursor, so
+   it never relies on colour perception alone. */
+input:disabled, select:disabled, button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  background: var(--aipm-surface-sunken);
+  color: var(--aipm-muted);
+  border-style: dashed;
+}
+
+.hint { margin: 0; color: var(--aipm-muted); font-size: 11px; line-height: 1.6; }
+
+.page-footer {
+  color: var(--aipm-muted);
+  font-size: 11px;
+  padding-top: var(--aipm-space-2);
+  border-top: 1px solid var(--aipm-border);
+}
+.page-footer p { margin: 0; }
+
+@media (max-width: 620px) {
+  .field-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 520px) {
+  .save-status { white-space: normal; }
+  h1 { font-size: 20px; }
+}

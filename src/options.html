@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Prompt Macro 設定</title>
+  <link rel="stylesheet" href="ui-tokens.css" />
+  <link rel="stylesheet" href="themes/themes.css" />
+  <link rel="stylesheet" href="options.css" />
+  <link rel="stylesheet" href="themes/fidelity.css" />
+</head>
+<body>
+  <main class="page" aria-busy="true">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">AI Prompt Macro</p>
+        <h1>設定</h1>
+      </div>
+      <p id="saveStatus" class="save-status" role="status" aria-live="polite">設定を読み込んでいます…</p>
+    </header>
+
+    <p class="scope-note">
+      ここで変更するのは<strong>拡張機能全体の既定値</strong>です。
+      実行中の自動化には影響しません。
+    </p>
+
+    <section class="card" aria-labelledby="appearanceHeading">
+      <div class="card-heading">
+        <p class="eyebrow">外観</p>
+        <h2 id="appearanceHeading">外観</h2>
+      </div>
+      <p class="section-note">
+        外観は<strong>表示だけの設定</strong>です。
+        実行の可否・送信・停止・復旧の判断には一切使いません。
+      </p>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="theme">テーマ</label>
+          <!-- Options are built from themes/registry.js so the catalogue and the
+               selector can never drift apart. -->
+          <select id="theme"></select>
+          <p id="themeHint" class="hint">配色・枠線・書体・進捗バーなどの見た目を選びます。</p>
+        </div>
+
+        <div class="field">
+          <label for="mode">外観モード</label>
+          <select id="mode">
+            <option value="system">システムに合わせる</option>
+            <option value="light">ライト</option>
+            <option value="dark">ダーク</option>
+          </select>
+          <p id="modeHint" class="hint">明るさを選びます。ライトのみ／ダークのみのテーマでは、そのテーマが対応する明るさで表示します。</p>
+        </div>
+
+        <div class="field">
+          <label for="accent">アクセント</label>
+          <select id="accent">
+            <option value="theme">テーマ標準</option>
+            <option value="amber">アンバー</option>
+            <option value="violet">バイオレット</option>
+            <option value="green">グリーン</option>
+          </select>
+          <p id="accentHint" class="hint">開始などの主要ボタンと進捗バーの色です。状態表示（実行中・安全のため停止など）の色と意味は変わりません。</p>
+        </div>
+
+        <div class="field">
+          <label for="density">表示密度</label>
+          <select id="density">
+            <option value="comfortable">標準</option>
+            <option value="compact">高密度</option>
+          </select>
+          <p class="hint">余白と文字サイズの詰め方です。</p>
+        </div>
+      </div>
+
+      <p class="hint">変更はサイドパネル・ワークスペース・この設定ページへ即時反映されます。</p>
+    </section>
+
+    <section class="card" aria-labelledby="defaultsHeading">
+      <div class="card-heading">
+        <p class="eyebrow">既定値</p>
+        <h2 id="defaultsHeading">実行の既定値</h2>
+      </div>
+      <p class="section-note">
+        保存後に新しく作成するタブ別の実行内容の初期値として使います。
+        <strong>保存済みの実行内容と、実行中の自動化は変更しません。</strong>
+      </p>
+
+      <div class="field checkbox-field">
+        <label for="keepAwake">
+          <input id="keepAwake" type="checkbox" />
+          <span>スリープ防止を既定で有効にする</span>
+        </label>
+      </div>
+
+      <div class="field-grid">
+        <div class="field">
+          <label for="delaySeconds">既定の待機時間（秒）</label>
+          <input id="delaySeconds" type="number" step="1" inputmode="numeric" />
+          <p id="delaySecondsHint" class="hint"></p>
+        </div>
+
+        <div class="field">
+          <label for="maxSends">既定の最大送信回数</label>
+          <input id="maxSends" type="number" min="1" max="50" step="1" inputmode="numeric" />
+          <p class="hint">1〜50回。1回の実行の上限は変更できません。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="recoveryHeading">
+      <div class="card-heading">
+        <p class="eyebrow">復旧</p>
+        <h2 id="recoveryHeading">復旧方針</h2>
+      </div>
+
+      <div class="field">
+        <label for="recoveryMode">新しい実行内容の復旧方針</label>
+        <select id="recoveryMode">
+          <option value="safe">標準</option>
+          <option value="completion">完了を優先</option>
+        </select>
+        <p id="recoveryModeDescription" class="hint">通常の回数と待機時間で、ページを操作せずに状態を再確認します。確認には上限があります。</p>
+        <p class="hint">実行中の自動化は変更しません。どちらも送信結果が不明な指示は自動再送せず、安全条件は同じです。</p>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="displayHeading">
+      <div class="card-heading">
+        <p class="eyebrow">診断</p>
+        <h2 id="displayHeading">診断表示</h2>
+      </div>
+
+      <div class="field">
+        <label for="diagnosticsLevel">診断情報の表示レベル</label>
+        <select id="diagnosticsLevel">
+          <option value="summary">要約</option>
+          <option value="detailed">詳細</option>
+        </select>
+        <p class="hint">
+          「要約」は技術詳細を閉じて表示し、「詳細」は技術詳細を最初から開きます。
+          表示だけの設定で、実行・送信・復旧条件や記録される診断項目は変わりません。
+        </p>
+      </div>
+
+      <div class="field">
+        <label for="sidePanelSections">サイドパネルの表示項目</label>
+        <select id="sidePanelSections" disabled>
+          <option>準備中</option>
+        </select>
+        <p class="hint">準備中です。</p>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="dataHeading">
+      <div class="card-heading">
+        <p class="eyebrow">データ</p>
+        <h2 id="dataHeading">データ</h2>
+      </div>
+      <div class="field">
+        <button id="manageData" type="button" disabled>保存データを管理</button>
+        <p class="hint">
+          準備中です。保存データの確認・書き出し・削除は後のフェーズで追加します。
+        </p>
+      </div>
+    </section>
+
+    <footer class="page-footer">
+      <p>
+        この設定ページは拡張機能内の設定のみを扱います。
+        ChatGPTの会話内容・回答本文・入力内容は読み取りません。
+      </p>
+    </footer>
+  </main>
+
+  <script type="module" src="options.js"></script>
+</body>
+</html>

@@ -1,0 +1,221 @@
+/*
+  Shared appearance seam for the three-surface UI.
+
+  WHAT THIS FILE IS
+  -----------------
+  Every visual decision the Side Panel, Workspace and Settings pages make is
+  expressed here as a token. A surface stylesheet reads tokens; it never invents
+  a palette of its own. That is what keeps the three surfaces one product rather
+  than three that merely look similar.
+
+  WHAT THIS FILE IS NOT
+  ---------------------
+  Appearance never participates in an authority decision. No token below is read
+  by background.js, the content scripts, workflow.js or recovery-policy.js. A
+  corrupted, missing or hostile appearance value can change how the product
+  LOOKS and nothing else: it cannot start a Run, cannot select a target, cannot
+  resume, cannot send, and cannot suppress a Stop.
+
+  THEME vs MODE
+  -------------
+  `theme` is the visual language; `mode` is the luminance
+  ("system" | "light" | "dark"). They are independent axes.
+
+  This file holds the base scales and the `default` theme. The other 22 themes
+  live in `themes/themes.css`, one scoped block each, and `themes/registry.js`
+  is the catalogue that names them. A design that supports only one luminance
+  declares that stance in the registry and is pinned to it, rather than being
+  given a fabricated palette for a mode it was never checked at.
+
+  STATUS COLOUR IS NOT THEME COLOUR
+  ---------------------------------
+  `--aipm-status-*` carries meaning (running / warning / stop). `--aipm-accent`
+  carries taste. They are separate token families, and no accent rule in this
+  file is allowed to write a `--aipm-status-*` value. That is the mechanical
+  reason a theme or accent change cannot change what a status means.
+
+  Status colour is also never the only carrier of meaning: every status surface
+  in every stylesheet also renders a text label.
+*/
+
+:root {
+  color-scheme: light dark;
+
+  /* ------------------------------------------------------------- geometry
+     A theme owns its geometry, not just its palette. These carry the parts of
+     a design's identity that colour cannot: how square it is, how heavy its
+     rules are, how its controls and progress are shaped. */
+  --aipm-radius: 13px;
+  --aipm-radius-sm: 9px;
+  --aipm-radius-pill: 999px;
+  --aipm-badge-radius: var(--aipm-radius-pill);
+  --aipm-button-radius: var(--aipm-radius-sm);
+  --aipm-progress-radius: var(--aipm-radius-pill);
+  --aipm-progress-height: 7px;
+  --aipm-border-width: 1px;
+  --aipm-surface-shadow: none;
+
+  /* --------------------------------------------------------- spacing scale
+     One scale, six steps. Surfaces multiply these; they do not invent values. */
+  --aipm-space-1: 4px;
+  --aipm-space-2: 8px;
+  --aipm-space-3: 12px;
+  --aipm-space-4: 16px;
+  --aipm-space-6: 24px;
+  --aipm-space-8: 32px;
+
+  /* ------------------------------------------------------------ typography
+     System fonts only. No font file is bundled or fetched, so the stack must
+     degrade cleanly and must include a Japanese-capable face on every host. */
+  --aipm-font-sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Yu Gothic UI", Meiryo, Roboto, "Helvetica Neue", Arial, sans-serif;
+  --aipm-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+
+  --aipm-font-title: 20px;    /* page title */
+  --aipm-font-section: 13px;  /* section title */
+  --aipm-font-value: 22px;    /* primary value */
+  --aipm-font-body: 12px;
+  --aipm-font-meta: 10px;
+  --aipm-font-label: 9px;     /* small technical label */
+  --aipm-font-code: 10px;
+  --aipm-tracking-label: .09em;
+
+  /* Small technical labels. A theme may re-voice these: an assistant-style
+     design sets transform:none / tracking:0 so they stop reading as an
+     instrument marking. */
+  --aipm-label-font: var(--aipm-font-mono);
+  --aipm-label-transform: uppercase;
+  --aipm-label-tracking: var(--aipm-tracking-label);
+
+  /* ---------------------------------------------------------- default theme
+     Derived from CSS system colours, exactly as the pre-theme Side Panel was.
+     Adopting these tokens therefore cannot shift the existing palette. */
+  --aipm-bg: Canvas;
+  --aipm-surface: color-mix(in srgb, Canvas 95%, CanvasText 5%);
+  --aipm-surface-raised: color-mix(in srgb, Canvas 88%, CanvasText 12%);
+  --aipm-surface-sunken: color-mix(in srgb, CanvasText 6%, Canvas);
+  /* The one card that must read as lifted off the page: the Run cockpit. It is
+     a separate token because "raised" means brighter on a light base and dimmer
+     on a dark one, which a single mix cannot express. */
+  --aipm-surface-cockpit: Canvas;
+  --aipm-text: CanvasText;
+  --aipm-muted: color-mix(in srgb, CanvasText 62%, Canvas 38%);
+  --aipm-border: color-mix(in srgb, CanvasText 16%, transparent);
+  --aipm-border-strong: color-mix(in srgb, CanvasText 30%, transparent);
+  --aipm-accent: CanvasText;
+  --aipm-accent-text: Canvas;
+  --aipm-accent-soft: color-mix(in srgb, CanvasText 10%, Canvas);
+  --aipm-focus: CanvasText;
+  --aipm-shadow: color-mix(in srgb, CanvasText 14%, transparent);
+
+  /* ------------------------------------------------------- status semantics
+     Identical meaning in every theme. Only the rendering is tuned per theme so
+     that contrast stays adequate; the mapping from meaning to hue never moves. */
+  --aipm-status-running: #16855b;
+  --aipm-status-paused: #3978c5;
+  --aipm-status-warning: #d58400;
+  --aipm-status-stop: #c63c3c;
+  --aipm-status-done: #16855b;
+  --aipm-status-neutral: color-mix(in srgb, CanvasText 45%, Canvas);
+  /* Legacy alias kept so existing surface rules keep resolving. */
+  --aipm-danger: #c63c3c;
+
+  /* ------------------------------------------------------------- decoration
+     Restrained industrial detail. Never rendered as if it carried data. */
+  --aipm-marker: color-mix(in srgb, CanvasText 34%, transparent);
+
+  /* --------------------------------------------------------------- density
+     `--aipm-density-*` is the pre-existing single knob a surface multiplies its
+     spacing by. It is kept so the Workspace and Settings layouts are unchanged. */
+  --aipm-density-space: 12px;
+  --aipm-density-gap: 9px;
+  --aipm-density-pad: 13px;
+  --aipm-control-height: 38px;
+  --aipm-font-size: 13px;
+}
+
+/* Explicit appearance mode. `mode: "system"` is resolved to one of these by the
+   surface script, so CSS never has to branch on prefers-color-scheme itself. */
+:root[data-aipm-mode="light"] { color-scheme: light; }
+:root[data-aipm-mode="dark"] { color-scheme: dark; }
+
+/* ========================================================= theme catalogue ==
+
+   The 23 remaining themes are defined in `themes/themes.css`, each in a single
+   `:root[data-aipm-theme="<id>"]` block that writes tokens only. `default`
+   above is the system-colour theme and needs no block of its own.
+
+   Ornament: the only decorated theme is `eva-command`, whose hex field is drawn
+   entirely with CSS gradients on a body pseudo-element. Using no DOM means the
+   ornament cannot take focus, cannot be queried by runtime logic, cannot be
+   duplicated, and disappears the instant another theme is selected.
+   ========================================================================= */
+
+/* ================================================================ accent ==
+
+   Accent is taste, not meaning. These rules write `--aipm-accent*` and nothing
+   else: no rule in this section may set a `--aipm-status-*` value, which is the
+   mechanical reason changing the accent cannot change what a status says.
+
+   Themes whose accent carries their identity (Swiss red, monochrome restraint,
+   phosphor green, EVA vermilion, HMI safety colour) are marked
+   `accentPolicy: "fixed"` in the registry. For those the surface script writes
+   `data-aipm-accent="theme"`, so none of the rules below match and the theme
+   keeps its own accent. The user's stored preference is never overwritten and
+   returns as soon as a customizable theme is selected again.
+   ========================================================================= */
+
+:root[data-aipm-accent="amber"] { --aipm-accent: #8a5a12; --aipm-accent-text: #ffffff; --aipm-accent-soft: #e8e0cf; }
+:root[data-aipm-accent="violet"] { --aipm-accent: #63479c; --aipm-accent-text: #ffffff; --aipm-accent-soft: #e2ddec; }
+:root[data-aipm-accent="green"] { --aipm-accent: #2f6b4a; --aipm-accent-text: #ffffff; --aipm-accent-soft: #dbe7e0; }
+
+@media (prefers-color-scheme: dark) {
+  :root[data-aipm-accent="amber"]:not([data-aipm-mode="light"]) { --aipm-accent: #c8873a; --aipm-accent-text: #0e0f11; --aipm-accent-soft: #241c11; }
+  :root[data-aipm-accent="violet"]:not([data-aipm-mode="light"]) { --aipm-accent: #9273cf; --aipm-accent-text: #14111d; --aipm-accent-soft: #1d1830; }
+  :root[data-aipm-accent="green"]:not([data-aipm-mode="light"]) { --aipm-accent: #4fa07c; --aipm-accent-text: #0d1411; --aipm-accent-soft: #10201a; }
+}
+
+:root[data-aipm-mode="dark"][data-aipm-accent="amber"] { --aipm-accent: #c8873a; --aipm-accent-text: #0e0f11; --aipm-accent-soft: #241c11; }
+:root[data-aipm-mode="dark"][data-aipm-accent="violet"] { --aipm-accent: #9273cf; --aipm-accent-text: #14111d; --aipm-accent-soft: #1d1830; }
+:root[data-aipm-mode="dark"][data-aipm-accent="green"] { --aipm-accent: #4fa07c; --aipm-accent-text: #0d1411; --aipm-accent-soft: #10201a; }
+
+/* =============================================================== density == */
+
+:root[data-aipm-density="compact"] {
+  --aipm-space-1: 3px;
+  --aipm-space-2: 6px;
+  --aipm-space-3: 9px;
+  --aipm-space-4: 12px;
+  --aipm-space-6: 18px;
+  --aipm-space-8: 24px;
+
+  --aipm-density-space: 8px;
+  --aipm-density-gap: 6px;
+  --aipm-density-pad: 9px;
+  --aipm-control-height: 32px;
+  --aipm-font-size: 12px;
+
+  --aipm-font-title: 18px;
+  --aipm-font-value: 20px;
+  --aipm-font-body: 11px;
+}
+
+/* ========================================================= shared basics ==
+
+   Focus and motion policy live with the tokens so all three surfaces inherit
+   the same behaviour instead of each re-deciding it.
+   ========================================================================= */
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--aipm-focus);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extensionName__",
+  "version": "0.4.0",
+  "description": "__MSG_extensionDescription__",
+  "default_locale": "ja",
+  "permissions": [
+    "storage",
+    "sidePanel",
+    "alarms",
+    "scripting",
+    "power"
+  ],
+  "background": {
+    "service_worker": "src/background.js",
+    "type": "module"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel.html"
+  },
+  "options_ui": {
+    "page": "src/options.html",
+    "open_in_tab": true
+  },
+  "action": {
+    "default_title": "__MSG_extensionName__"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chatgpt.com/*"
+      ],
+      "js": [
+        "src/content-core.js",
+        "src/content-runner.js",
+        "src/content-controller.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*"
+  ]
+}

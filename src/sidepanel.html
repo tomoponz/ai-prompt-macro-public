@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI Prompt Macro</title>
+  <link rel="stylesheet" href="ui-tokens.css" />
+  <link rel="stylesheet" href="themes/themes.css" />
+  <link rel="stylesheet" href="sidepanel.css" />
+  <link rel="stylesheet" href="themes/fidelity.css" />
+</head>
+<body class="aipm-sidepanel-surface">
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">AI Prompt Macro · 0.4.0</p>
+        <h1>実行コントロール</h1>
+      </div>
+      <div class="header-actions">
+        <button id="openWorkspace" class="small" type="button">ワークスペース</button>
+        <button id="openSettings" class="small" type="button">設定</button>
+      </div>
+    </header>
+
+    <section id="targetCard" class="card compact target-card">
+      <div class="row between">
+        <label for="targetTab">操作するChatGPTタブ</label>
+        <button id="refreshTabs" class="small" type="button">更新</button>
+      </div>
+      <select id="targetTab" aria-label="操作するChatGPTタブ"></select>
+      <div class="target-status-row">
+        <p id="targetTabHint" class="hint">ChatGPTタブを検索しています。</p>
+        <details id="targetTechnicalDetails">
+          <summary>詳細</summary>
+          <p id="targetTechnicalInfo" class="hint"></p>
+        </details>
+      </div>
+      <details id="targetDisplaySettings">
+        <summary>タブ表示設定</summary>
+        <div class="disclosure-body">
+      <div id="targetPresentationSummary" class="target-presentation-summary" data-color="default" hidden>
+        <span class="target-color-marker" aria-hidden="true"></span>
+        <span class="target-presentation-copy">
+          <span class="target-presentation-heading">
+            <strong id="targetPresentationName">—</strong>
+            <span id="targetPresentationGroup" class="target-group-chip" hidden></span>
+          </span>
+          <small id="targetPresentationMeta">接続状態を確認しています。</small>
+        </span>
+      </div>
+      <div class="target-presentation-fields">
+        <label for="targetAlias">表示名
+          <input id="targetAlias" type="text" maxlength="40" autocomplete="off" placeholder="例: Release監査" />
+        </label>
+        <label for="targetColor">識別色
+          <select id="targetColor">
+            <option value="default">標準</option>
+            <option value="blue">青</option>
+            <option value="green">緑</option>
+            <option value="yellow">黄</option>
+            <option value="orange">橙</option>
+            <option value="red">赤</option>
+            <option value="purple">紫</option>
+          </select>
+        </label>
+        <label class="target-group-field" for="targetGroup">グループ
+          <input id="targetGroup" type="text" maxlength="40" autocomplete="off" placeholder="例: 調査 / 開発 / テスト" />
+        </label>
+      </div>
+      <p id="targetAliasHint" class="hint">表示情報を準備しています。表示情報はタブを見分けるためだけに使い、送信先や実行可否の判定には使いません。</p>
+        </div>
+      </details>
+      <label class="power-option" for="keepAwake">
+        <input id="keepAwake" type="checkbox" />
+        <span>実行中のスリープを防ぐ</span>
+      </label>
+    </section>
+
+    <p id="editorStateNotice" class="editor-state-notice" role="status" hidden></p>
+    <div id="editorConflictActions" class="card compact" hidden>
+      <button id="copyEditorInput" type="button">自分の入力をコピー</button>
+      <button id="reloadEditorState" type="button">保存済み内容を読み直す</button>
+      <p id="editorCopyStatus" class="hint" aria-live="polite"></p>
+    </div>
+
+    <div class="entry-modes" role="group" aria-label="入力方法">
+      <button id="quickTab" type="button" aria-pressed="true">クイック</button>
+      <button id="flowTab" type="button" aria-pressed="false">手順を貼り付け</button>
+    </div>
+
+    <section id="quickPanel" class="card">
+      <label for="quickPreset">よく使う指示</label>
+      <select id="quickPreset"></select>
+
+      <label for="quickPrompt">AIへの指示</label>
+      <textarea id="quickPrompt" rows="3" spellcheck="false"></textarea>
+
+      <div class="grid2">
+        <div>
+          <label for="quickRepeat">繰り返し回数</label>
+          <input id="quickRepeat" type="number" min="1" max="50" value="3" />
+        </div>
+        <div>
+          <label for="quickDelay">追加の待機（秒）</label>
+          <input id="quickDelay" type="number" min="0" max="300" step="0.5" value="1.5" />
+        </div>
+      </div>
+      <p class="hint">待機は生成完了後に追加する時間です。</p>
+    </section>
+
+    <section id="flowEntryPanel" class="card hidden" aria-label="手順を貼り付け">
+      <details id="flowGuide" class="flow-guide">
+        <summary>AIに手順を作ってもらう</summary>
+        <div class="flow-guide-body">
+          <label for="flowGoal">やりたいこと（任意）</label>
+          <textarea id="flowGoal" rows="2" placeholder="目的をAIに伝えていれば、空欄のまま使えます。"></textarea>
+          <button id="copyFlowGuide" type="button">AI用の作成ガイドをコピー</button>
+          <p class="hint">コピーしたガイドをAIへ自分で貼り付けてください。</p>
+          <details id="flowGuideDetails">
+            <summary>コピー内容・AIPM Flow仕様を見る</summary>
+            <label for="flowGuideText">AI用の作成ガイド全文（手動コピー可）</label>
+            <textarea id="flowGuideText" rows="10" readonly spellcheck="false"></textarea>
+          </details>
+          <p id="flowGuideCopyStatus" class="hint" aria-live="polite"></p>
+        </div>
+      </details>
+      <label for="flowText">AIが作った手順（AIPM Flow）</label>
+      <textarea id="flowText" class="flow-editor" rows="4" spellcheck="false"></textarea>
+
+      <div id="flowSelectorField" class="disclosure-body" hidden>
+      <label for="flowSelector">実行するFlow</label>
+      <select id="flowSelector" aria-label="実行するFlow"></select>
+      </div>
+
+      <p id="flowInputStatus" class="hint" role="status" aria-live="polite"></p>
+      <p id="flowPreviewTarget" class="hint"></p>
+      <section class="flow-preview" aria-label="実行前プレビュー" aria-live="polite">
+        <p class="flow-counts">送信 <strong id="flowPlannedSends">-</strong>回 · 手順 <strong id="flowBlockCount">-</strong>個</p>
+        <details id="flowPreviewDetails">
+          <summary>実行内容の詳細</summary>
+        <dl>
+          <div><dt>Flow名</dt><dd id="flowPreviewName">-</dd></div>
+          <div><dt>選択したFlow</dt><dd id="flowPreviewSelected">-</dd></div>
+          <div><dt>実行範囲</dt><dd id="flowPreviewRange">Flow全体</dd></div>
+          <div><dt>繰り返し</dt><dd id="flowPreviewRepeat">-</dd></div>
+          <div><dt>待機</dt><dd id="flowPreviewWaits">-</dd></div>
+          <div><dt>確認ポイント</dt><dd id="flowPreviewCheckpoints">-</dd></div>
+          <div><dt>復旧方針</dt><dd id="flowPreviewRecovery">標準</dd></div>
+        </dl>
+        <p class="hint">自動送信は最大50回、手順は最大40個です。貼り付け・検証だけでは送信しません。Flowでは「入力だけして確認」は使えません。</p>
+        <p class="hint">説明文やMarkdownの囲みを除いたFlowだけを貼り付けてください。</p>
+        </details>
+      </section>
+      <p id="flowError" class="flow-error" role="alert" hidden></p>
+      <p id="flowSavedRange" class="warning-note" hidden></p>
+      <p id="flowPlanError" class="flow-error" role="alert" hidden></p>
+      <div id="flowPlanSteps" aria-label="実際に実行する指示と順序"></div>
+      <button id="flowOpenWorkspace" class="small" type="button">ワークスペースで編集</button>
+    </section>
+
+    <section id="startSection" class="card compact" aria-label="確認した内容を開始">
+      <button id="start" class="primary" disabled>内容を確認して開始</button>
+      <p id="flowStartReason" class="flow-start-reason" aria-live="polite">対象タブの状態確認後に開始可否を表示します。</p>
+    </section>
+
+    <!-- Active or uncertain Runs move before the target; idle follows Start. -->
+    <section id="runCard" class="card compact run-card" data-state="idle" data-compact="true" aria-label="実行コントロール">
+      <div class="run-summary">
+        <div class="run-status">
+          <span class="run-status-caption">状態</span>
+          <span id="statusBadge" class="badge run-state-badge">待機中</span>
+        </div>
+        <span id="progress" class="run-progress-value" hidden>0 / 0</span>
+      </div>
+
+      <div id="runDetails" class="disclosure-body" hidden>
+      <div class="progress-track" aria-hidden="true"><div id="progressBar" class="progress-bar"></div></div>
+
+      <div id="runGuidance" class="disclosure-body" role="region" aria-label="実行状況の詳細" tabindex="0">
+      <p id="connectionStatus" class="connection-status" data-connection="unavailable" role="status" aria-live="polite">接続状態: 対象のChatGPTタブがありません</p>
+      <p id="completionOutcome" class="completion-outcome" data-outcome="attention" aria-live="polite">接続確認が必要 — 対象ChatGPTタブの現在状態を確認してください。</p>
+
+      <div class="cockpit-guidance">
+        <p id="message" aria-live="polite">現在実行中の自動化はありません。</p>
+        <p class="guidance-label">次の操作</p>
+        <p id="nextAction" class="next-action" aria-live="polite">chatgpt.comを開き、上の「更新」を押してください。</p>
+      </div>
+
+      <p id="activeRunWarning" class="runtime-warning" hidden>実行中は会話の切り替え・入力欄や添付の手動編集を避けてください。</p>
+      </div>
+      <div class="actions">
+        <button id="pause" disabled>一時停止</button>
+        <button id="resume" class="primary" disabled>再開</button>
+        <button id="stop" class="danger" disabled>停止</button>
+      </div>
+      </div>
+    </section>
+
+    <section id="savedAutomation" class="card compact saved-automation-card" aria-label="保存済み実行内容">
+      <span>保存済み:</span>
+      <strong id="savedAutomationMode">確認中</strong>
+      <span id="savedAutomationSummary" class="saved-automation-summary">確認しています。</span>
+    </section>
+
+    <details id="recoverySettings" class="card compact recovery-card">
+      <summary>詳細設定 · 復旧: <span id="recoveryPolicyLabel">標準</span></summary>
+      <div class="disclosure-body">
+      <label for="recoveryMode">一時的な確認失敗への対応</label>
+      <select id="recoveryMode">
+        <option value="safe">標準</option>
+        <option value="completion">完了を優先</option>
+      </select>
+      <p id="recoveryModeDescription" class="hint">通常の回数と待機時間で、ページを操作せずに状態を再確認します。確認には上限があります。</p>
+      <details id="advancedRecovery" class="recovery-advanced hidden">
+        <summary>復旧の詳細設定</summary>
+        <div class="grid3">
+          <div>
+            <label for="identityRetries">対象ページの再確認回数</label>
+            <select id="identityRetries"><option value="3">3回</option><option value="5">5回</option><option value="10">10回</option></select>
+          </div>
+          <div>
+            <label for="readinessRecovery">準備待ち</label>
+            <select id="readinessRecovery"><option value="normal">標準</option><option value="long">長め</option></select>
+          </div>
+          <div>
+            <label for="statusRecovery">状態確認</label>
+            <select id="statusRecovery"><option value="normal">標準</option><option value="persistent">粘り強く確認</option></select>
+          </div>
+        </div>
+      </details>
+      <p class="warning-note">どちらも送信結果が不明な指示は自動再送しません。対象タブ・会話・ページの確認、同じ会話の同時操作防止、最大50回の自動送信、回答本文を読まない安全条件は同じです。</p>
+      <p class="hint">スリープ防止中も画面は消灯できます。実行の完了・停止・一時停止で解除します。PCがスリープ・休止状態になると自動実行は進みません。</p>
+      <p class="hint">実行中は対象タブの会話を切り替えたり、入力欄や添付を手動編集したりしないでください。</p>
+      </div>
+    </details>
+
+    <section id="authoringCompatibilityState" hidden inert aria-hidden="true">
+      <!--
+        Phase 4A-C regression compatibility only. Full authoring is not a Side
+        Panel surface in Phase 4D; these controls remain inert while the shared
+        storage/concurrency harness continues to verify preservation of all six
+        editor fields. Workspace is the only interactive owner of this UI.
+      -->
+      <button id="workflowTab" type="button">Workflow compatibility state</button>
+
+    <section id="workflowPanel" class="card hidden">
+      <div class="row between">
+        <label for="workflowPreset">自動化フローの例</label>
+        <button id="loadPreset" class="small" type="button">この例を使う</button>
+      </div>
+      <select id="workflowPreset"></select>
+
+      <div class="grid2">
+        <div>
+          <label for="workflowName">フロー名</label>
+          <input id="workflowName" value="カスタム自動化フロー" />
+        </div>
+        <div>
+          <label for="workflowMaxSends">最大送信回数</label>
+          <input id="workflowMaxSends" type="number" min="1" max="50" value="10" />
+        </div>
+      </div>
+
+      <div class="section-heading">
+        <div>
+          <strong>実行する手順</strong>
+          <p class="hint">上から順に実行します。ドラッグまたは ↑ ↓ で並べ替えできます。</p>
+        </div>
+      </div>
+
+      <div class="block-toolbar" aria-label="手順を追加">
+        <button id="addPrompt" class="small" type="button">＋ AIへの指示</button>
+        <button id="addDelay" class="small" type="button">＋ 待機</button>
+        <button id="addWaitUntil" class="small" type="button">＋ 指定時刻まで待つ</button>
+        <button id="addCheckpoint" class="small" type="button">＋ 確認ポイント</button>
+      </div>
+
+      <div id="steps" class="steps" aria-live="polite"></div>
+    </section>
+
+    <section id="flowPanel" class="card hidden">
+      <div class="row between flow-heading">
+        <div>
+          <strong>AIPM Flow v1.1</strong>
+          <p class="hint">有限の send / repeat / wait / wait until / checkpoint を既存Workflowへ安全に変換します。</p>
+        </div>
+        <button id="copyFlow" class="small" type="button">Flowをコピー</button>
+      </div>
+      <p id="copyFlowStatus" class="hint" aria-live="polite"></p>
+
+      <details class="flow-library" open>
+        <summary>Flowライブラリ（このPC内だけ）</summary>
+        <div class="flow-library-body">
+          <label for="flowLibrarySearch">検索 / 最近使用</label>
+          <input id="flowLibrarySearch" type="search" placeholder="名前・説明を検索" />
+          <label for="flowLibraryList">保存済みFlow</label>
+          <select id="flowLibraryList" size="4" aria-label="保存済みFlow"></select>
+          <div class="grid2">
+            <div>
+              <label for="flowLibraryName">名前</label>
+              <input id="flowLibraryName" maxlength="80" placeholder="Flow名" />
+            </div>
+            <div>
+              <label class="favorite-option" for="flowLibraryFavorite">
+                <input id="flowLibraryFavorite" type="checkbox" /> お気に入り
+              </label>
+            </div>
+          </div>
+          <label for="flowLibraryDescription">説明</label>
+          <textarea id="flowLibraryDescription" rows="2" maxlength="500" placeholder="用途や注意点（任意）"></textarea>
+          <div class="library-actions">
+            <button id="flowLibrarySaveNew" class="small" type="button">新規保存</button>
+            <button id="flowLibraryUpdate" class="small" type="button">上書き保存</button>
+            <button id="flowLibraryOpen" class="small" type="button">開く</button>
+            <button id="flowLibraryDuplicate" class="small" type="button">複製</button>
+            <button id="flowLibraryRename" class="small" type="button">名前変更</button>
+            <button id="flowLibraryDelete" class="small danger" type="button">削除</button>
+            <button id="flowLibraryCopy" class="small" type="button">コピー</button>
+            <button id="flowLibraryShare" class="small" type="button">共有 (.txt)</button>
+          </div>
+          <p id="flowLibraryStatus" class="hint" aria-live="polite"></p>
+        </div>
+      </details>
+
+      <details class="flow-import-export">
+        <summary>読み込み / 書き出し</summary>
+        <div class="flow-library-body">
+          <p class="hint">プレーンテキストのAIPM Flowだけを扱います。読み込んでも自動では開始しません。</p>
+          <label for="flowImportText">貼り付けて読み込む</label>
+          <textarea id="flowImportText" rows="5" spellcheck="false" placeholder="AIPM Flowを貼り付け"></textarea>
+          <div class="library-actions">
+            <button id="flowImportPaste" class="small" type="button">貼り付け内容を読み込む</button>
+            <label class="file-button" for="flowImportFile">ローカルテキストファイル</label>
+            <input id="flowImportFile" type="file" accept=".txt,.aipm,text/plain" />
+            <button id="flowExportFile" class="small" type="button">現在のFlowを書き出す</button>
+          </div>
+          <p id="flowImportStatus" class="hint" aria-live="polite"></p>
+        </div>
+      </details>
+
+      <fieldset class="flow-execution-controls">
+        <legend>実行範囲</legend>
+        <label for="flowExecutionMode">実行範囲</label>
+        <select id="flowExecutionMode">
+          <option value="full">Flow全体</option>
+          <option value="step">この手順だけ</option>
+          <option value="from">この手順から最後まで</option>
+          <option value="range">選択範囲</option>
+          <option value="range-repeat">選択範囲を繰り返す</option>
+          <option value="after-checkpoint">Checkpointから再開</option>
+        </select>
+        <div id="flowRangeControls" class="grid3 hidden">
+          <div><label for="flowRangeStart">開始手順</label><input id="flowRangeStart" type="number" min="1" value="1" /></div>
+          <div><label for="flowRangeEnd">終了手順</label><input id="flowRangeEnd" type="number" min="1" value="1" /></div>
+          <div><label for="flowRangeRepeat">範囲の繰り返し</label><input id="flowRangeRepeat" type="number" min="1" max="50" value="1" /></div>
+        </div>
+        <div id="flowCheckpointControls" class="hidden">
+          <label for="flowCheckpoint">再開元Checkpoint</label>
+          <select id="flowCheckpoint"></select>
+        </div>
+        <p id="flowPartialWarning" class="warning-note" hidden>以前の手順で形成された会話文脈が必要な場合があります。対象会話と実行範囲を確認してください。</p>
+      </fieldset>
+
+      <button id="flowStart" class="primary" type="button" disabled>このFlowを開始</button>
+      <p class="hint">複数のFlowがある場合も、上で選んだ1つだけを実行します。AIの回答内容による分岐は行いません。</p>
+    </section>
+
+    </section>
+
+
+
+
+
+
+    <details id="diagnosticsCard" class="card compact diagnostics-card">
+      <summary id="diagnosticsHeading">診断 · <span id="diagnosticsSeverity" data-severity="info">情報</span></summary>
+      <div class="disclosure-body">
+      <strong id="diagnosticsTitle" class="diagnostics-title">表示対象の診断情報はありません</strong>
+      <p id="diagnosticsSummary" class="diagnostics-summary">現在の実行状態は、上の「現在の状態」と「理由」で確認してください。</p>
+      <p id="diagnosticsSafety" class="diagnostics-safety">診断表示は実行状態や送信可否を変更しません。</p>
+      <p id="connectionDiagnostic" class="diagnostics-summary" hidden></p>
+      <details id="diagnosticsAdvanced" class="diagnostics-advanced">
+        <summary>技術詳細を表示</summary>
+        <dl id="diagnosticsDetails" class="diagnostics-details"></dl>
+        <dl id="connectionDiagnosticDetails" class="diagnostics-details" hidden></dl>
+        <h3>最近の診断イベント</h3>
+        <ul id="diagnostics" class="diagnostics-events"><li>なし</li></ul>
+      </details>
+      </div>
+    </details>
+
+    <details id="devSettings" class="card compact">
+      <summary>開発版の更新</summary>
+      <div class="row between">
+        <span>現在 v<span id="extensionVersion">-</span></span>
+        <button id="reloadExtension" class="small" type="button">拡張を再読み込み</button>
+      </div>
+      <p class="hint">ローカルcloneで <code>update-ai-prompt-macro.cmd</code> を実行した後に使います。</p>
+      <p id="reloadExtensionMessage" class="hint">再読み込み後、ChatGPTタブも一度再読み込みしてください。</p>
+    </details>
+  </main>
+  <script type="module" src="connection-diagnostics-ui.js"></script>
+  <script type="module" src="sidepanel.js"></script>
+  <script type="module" src="tab-alias-ui.js"></script>
+  <script type="module" src="dev-update.js"></script>
+</body>
+</html>
