@@ -418,11 +418,11 @@ test("U10: viewing another active browser tab keeps the selected target and revi
   const initialList = h.messages.find((message) => message.type === "AIPM_LIST_CHATGPT_TABS");
   assert.ok(initialList);
   h.setListTabsResponder(() => ({
-    ok: true, serviceWorkerVersion: "0.4.0", siteAccessGranted: true,
+    ok: true, serviceWorkerVersion: "0.4.1", siteAccessGranted: true,
     tabs: [1, 2].map((tabId) => ({
       tabId, windowId: 1, active: tabId === 2,
       status: { pageReady: true, generationState: "idle", blocker: null, run: null,
-        provider: "chatgpt", contentVersion: "0.4.0", instanceId: `instance-${tabId}`,
+        provider: "chatgpt", contentVersion: "0.4.1", instanceId: `instance-${tabId}`,
         conversationKey: `chatgpt:c:tab-${tabId}`, discoveryError: null }
     }))
   }));
@@ -439,9 +439,9 @@ test("U10: a disappeared selected target retains local Flow and never transfers 
   await paste(h);
   const secondBefore = saved(h, 2);
   h.setListTabsResponder(() => ({
-    ok: true, serviceWorkerVersion: "0.4.0", siteAccessGranted: true,
+    ok: true, serviceWorkerVersion: "0.4.1", siteAccessGranted: true,
     tabs: [{ tabId: 2, windowId: 1, active: true,
-      status: { pageReady: true, provider: "chatgpt", contentVersion: "0.4.0", run: null,
+      status: { pageReady: true, provider: "chatgpt", contentVersion: "0.4.1", run: null,
         instanceId: "instance-2", conversationKey: "chatgpt:c:tab-2", discoveryError: null } }]
   }));
   await h.click("refreshTabs");
@@ -593,7 +593,7 @@ test("U12: editing and switching authoring modes cannot mutate the active Run or
         sentCount: 0, cursor: { stepIndex: 0, repeatIndex: 0 }, workflow: structuredClone(message.payload.workflow) };
     }
     if (message.payload.type === "AIPM_STOP") activeRun = null;
-    return { ok: true, pageReady: true, provider: "chatgpt", contentVersion: "0.4.0", generationState: "idle",
+    return { ok: true, pageReady: true, provider: "chatgpt", contentVersion: "0.4.1", generationState: "idle",
       blocker: null, conversationKey: "chatgpt:c:tab-1", instanceId: "instance-1", run: activeRun, diagnostics: [] };
   });
   await h.click("start");

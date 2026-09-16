@@ -109,7 +109,7 @@ test("ambiguous first submit in Repeat=3 never clicks a second time", async () =
     provider: "chatgpt",
     conversationKey,
     executionSessionId: "session-qa",
-    contentVersion: "0.4.0",
+    contentVersion: "0.4.1",
     status: "running",
     phase: "ready",
     resumable: true,

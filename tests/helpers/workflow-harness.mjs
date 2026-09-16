@@ -9,7 +9,7 @@ const controllerSource = fs.readFileSync(new URL("../../src/content-controller.j
 
 export const clone = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)));
 
-export const CONTENT_VERSION = "0.4.0";
+export const CONTENT_VERSION = "0.4.1";
 export const CONVERSATION_KEY = "chatgpt:c:project-three-prompt";
 export const SESSION_ID = "session-block-workflow";
 export const TAB_ID = 314;

@@ -32,7 +32,7 @@ test("Side Panel renders state, progress, reason, next action, and connection as
   harness.setRelayResponder(() => ({
     ok: true,
     provider: "chatgpt",
-    contentVersion: "0.4.0",
+    contentVersion: "0.4.1",
     pageReady: true,
     generationState: "idle",
     blocker: null,

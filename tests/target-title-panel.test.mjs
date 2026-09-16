@@ -8,9 +8,9 @@ test("production panel keeps title and active state separate from selected-tab a
     let title = "同じ会話タイトル";
     let activeId = 2;
     let secondWindow = 1;
-    const status = id => ({ provider: "chatgpt", contentVersion: "0.4.0", pageReady: true,
+    const status = id => ({ provider: "chatgpt", contentVersion: "0.4.1", pageReady: true,
       conversationKey: `chatgpt:c:private-id-${id}`, run: null });
-    h.setListTabsResponder(() => ({ ok: true, serviceWorkerVersion: "0.4.0", tabs: [1, 2].map(tabId => ({
+    h.setListTabsResponder(() => ({ ok: true, serviceWorkerVersion: "0.4.1", tabs: [1, 2].map(tabId => ({
       tabId, windowId: tabId === 1 ? 1 : secondWindow, active: tabId === activeId,
       displayTitle: title, status: status(tabId)
     })) }));

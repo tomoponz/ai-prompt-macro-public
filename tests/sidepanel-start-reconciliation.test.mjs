@@ -148,7 +148,7 @@ test(`F5 C/D: production timeout, null observation, then original Start ${lateOu
 function status(tabId, run = null) {
   return {
     ok: true, pageReady: true, generationState: "idle", blocker: null,
-    provider: "chatgpt", contentVersion: "0.4.0", instanceId: `instance-${tabId}`,
+    provider: "chatgpt", contentVersion: "0.4.1", instanceId: `instance-${tabId}`,
     conversationKey: `chatgpt:c:tab-${tabId}`, run, diagnostics: []
   };
 }

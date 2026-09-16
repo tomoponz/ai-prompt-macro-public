@@ -475,7 +475,7 @@ test("re-evaluating the content core does not redeclare lexicals or reset live r
   context.activeRunnerExecutionSessionId = "live-session";
   vm.runInContext(coreSource, context);
 
-  assert.equal(context.__AIPM_CONTENT_CORE__.version, "0.4.0");
+  assert.equal(context.__AIPM_CONTENT_CORE__.version, "0.4.1");
   assert.equal(context.__AIPM_CONTENT_CORE__.ready, true);
   assert.equal(context.localRunnerToken, 7);
   assert.equal(context.recoveryStarted, true);

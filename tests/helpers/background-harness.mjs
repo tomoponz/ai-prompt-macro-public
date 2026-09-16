@@ -11,7 +11,7 @@
 // `installBackgroundHarness()` installs `globalThis.chrome` and imports `src/background.js`
 // exactly once per test file (module-level listeners and caches are per-import), so a file
 // calls it once and gives each test its own tab id.
-export const EXTENSION_VERSION = "0.4.0";
+export const EXTENSION_VERSION = "0.4.1";
 export const DEFAULT_SESSION_ID = "session-torture";
 
 const SESSION_KEY = "aipm.executionSession.v1";

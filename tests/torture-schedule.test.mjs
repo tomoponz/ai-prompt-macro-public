@@ -329,7 +329,7 @@ test("T6: an armed schedule survives only inside its own execution session", asy
     runId: "session-schedule",
     stepId: "wait",
     whenMs: Date.now() + 60_000,
-    serviceWorkerVersion: "0.4.0",
+    serviceWorkerVersion: "0.4.1",
     executionSessionId: DEFAULT_SESSION_ID
   }, { tab: { id: tabId } });
   assert.equal(armed.ok, true);
@@ -339,7 +339,7 @@ test("T6: an armed schedule survives only inside its own execution session", asy
     runId: "foreign-schedule",
     stepId: "wait",
     whenMs: Date.now() + 60_000,
-    serviceWorkerVersion: "0.4.0",
+    serviceWorkerVersion: "0.4.1",
     executionSessionId: "a-previous-browser-session"
   }, { tab: { id: tabId } });
   assert.equal(foreign.ok, false, "a schedule from another browser session must not be armed");

@@ -1,6 +1,6 @@
 "use strict";
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.0", ready: false };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.1", ready: false };
 
 var SCHEMA_VERSION = 1;
 var DIAGNOSTICS_KEY = "aipm.diagnostics.v1";
@@ -1503,4 +1503,4 @@ async function migrateLeaseIfNeeded(lease, run) {
   return lease;
 }
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.0", ready: true };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.1", ready: true };

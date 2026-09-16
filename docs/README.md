@@ -1,6 +1,6 @@
 # ドキュメント案内
 
-AI Prompt Macro 0.4.0の使い方と開発・検証手順です。
+AI Prompt Macro 0.4.1の使い方と開発・検証手順です。
 
 - [はじめて使う](getting-started/README.md) — インストール、対象選択、最初のFlow
 - [ユーザーガイド](user-guide/README.md) — 編集、実行、停止、復旧

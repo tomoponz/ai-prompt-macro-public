@@ -160,7 +160,7 @@ function defaultTabStatus(tabId) {
     run: null,
     provider: "chatgpt",
     instanceId: `instance-${tabId}`,
-    contentVersion: "0.4.0",
+    contentVersion: "0.4.1",
     discoveryError: null
   };
 }
@@ -229,7 +229,7 @@ export async function installSidePanelHarness({ tabIds = [1, 2], storageSeed = {
             failedChatGptTabs: 0,
             unknownTabFailures: 0,
             discoveryErrors: [],
-            serviceWorkerVersion: "0.4.0",
+            serviceWorkerVersion: "0.4.1",
             siteAccessGranted: true
           };
         }
@@ -239,7 +239,7 @@ export async function installSidePanelHarness({ tabIds = [1, 2], storageSeed = {
           return {
             ok: true,
             provider: "chatgpt",
-            contentVersion: "0.4.0",
+            contentVersion: "0.4.1",
             pageReady: true,
             generationState: "idle",
             blocker: null,
