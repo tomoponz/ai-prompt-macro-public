@@ -22,7 +22,7 @@ function statusFor(run) {
   return {
     ok: true,
     provider: "chatgpt",
-    contentVersion: "0.4.1",
+    contentVersion: "0.4.2",
     pageReady: true,
     generationState: "idle",
     blocker: null,

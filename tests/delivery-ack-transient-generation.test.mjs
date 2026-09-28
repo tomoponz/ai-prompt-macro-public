@@ -91,7 +91,7 @@ function newRun(workflow, conversationKey, suffix) {
     provider: "chatgpt",
     conversationKey,
     executionSessionId: `session-${suffix}`,
-    contentVersion: "0.4.1",
+    contentVersion: "0.4.2",
     status: "running",
     phase: "ready",
     resumable: true,
