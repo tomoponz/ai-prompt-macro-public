@@ -622,7 +622,15 @@ function startDeliveryAcceptanceWatch(transaction, findGenerationControl) {
   const observer = new MutationObserver(() => {
     if (check()) stopDeliveryAcceptanceWatch(transaction);
   });
-  observer.observe(document.body, { subtree: true, childList: true });
+  // A reused control can become Stop (or become visible) through attributes alone.
+  // Observe only the attributes used by control identity/visibility; a mutation is
+  // never acceptance evidence by itself, and no text or old attribute values are read.
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["data-testid", "aria-label", "hidden", "style", "class"]
+  });
   transaction.acceptanceObserver = observer;
 }
 
