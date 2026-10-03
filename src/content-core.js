@@ -1,6 +1,6 @@
 "use strict";
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.1", ready: false };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.2", ready: false };
 
 var SCHEMA_VERSION = 1;
 var DIAGNOSTICS_KEY = "aipm.diagnostics.v1";
@@ -75,7 +75,9 @@ function composerIsEffectivelyEmpty(text) {
 }
 
 function isProseMirrorComposer(composer) {
-  return composer?.id === "prompt-textarea" &&
+  const hasComposerIdentity = composer?.id === "prompt-textarea" ||
+    composer?.matches?.("form[data-chatgpt-composer] div[data-composer-markdown][role='textbox']") === true;
+  return hasComposerIdentity &&
     composer?.classList?.contains?.("ProseMirror") === true &&
     composer?.getAttribute?.("contenteditable") === "true";
 }
@@ -620,7 +622,15 @@ function startDeliveryAcceptanceWatch(transaction, findGenerationControl) {
   const observer = new MutationObserver(() => {
     if (check()) stopDeliveryAcceptanceWatch(transaction);
   });
-  observer.observe(document.body, { subtree: true, childList: true });
+  // A reused control can become Stop (or become visible) through attributes alone.
+  // Observe only the attributes used by control identity/visibility; a mutation is
+  // never acceptance evidence by itself, and no text or old attribute values are read.
+  observer.observe(document.body, {
+    subtree: true,
+    childList: true,
+    attributes: true,
+    attributeFilter: ["data-testid", "aria-label", "hidden", "style", "class"]
+  });
   transaction.acceptanceObserver = observer;
 }
 
@@ -903,7 +913,9 @@ var ChatGptAdapter = {
       "#prompt-textarea",
       "textarea[data-testid='prompt-textarea']",
       "div[data-testid='prompt-textarea'][contenteditable='true']",
-      "textarea[name='prompt-textarea']"
+      "textarea[name='prompt-textarea']",
+      // Current ChatGPT omits the legacy id; require both its form and editor identity.
+      "form[data-chatgpt-composer] div.ProseMirror[data-composer-markdown][role='textbox'][contenteditable='true']"
     ]);
   },
 
@@ -1503,4 +1515,4 @@ async function migrateLeaseIfNeeded(lease, run) {
   return lease;
 }
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.1", ready: true };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.2", ready: true };

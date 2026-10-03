@@ -492,3 +492,16 @@ test("Draft production path releases ownership even when draft-ready persistence
   assert.equal(harness.clicks(), 0);
   assert.ok(harness.observers.every((observer) => !observer.connected));
 });
+
+
+test("current ChatGPT composer identity remains explicit and ProseMirror-compatible", () => {
+  const harness = createComposerHarness();
+  harness.composer.id = "";
+  harness.composer.matches = (selector) =>
+    selector === "form[data-chatgpt-composer] div[data-composer-markdown][role='textbox']";
+
+  assert.equal(harness.context.isProseMirrorComposer(harness.composer), true);
+
+  harness.composer.matches = () => false;
+  assert.equal(harness.context.isProseMirrorComposer(harness.composer), false);
+});

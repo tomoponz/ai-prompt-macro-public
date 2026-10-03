@@ -4,7 +4,9 @@ AI Prompt Macroは、PC版Chrome / Edgeで選んだChatGPTタブへ、事前に�
 
 **原作者 / Original author:** [tomoponz](https://github.com/tomoponz)
 
-**このソースのバージョン: 0.4.1（Store更新準備中）**。
+**このソースのバージョン: 0.4.2（Store更新準備中）**。
+
+0.4.2では、ChatGPT Webの入力欄構造変更への互換性を更新しました。権限・対応ホスト・回答本文を読まない方針・データ収集方針は変更していません。
 
 **Store配布版: 0.4.0**。[Microsoft Edge Add-ons](https://microsoftedge.microsoft.com/addons/detail/ai-prompt-macro/faefckjniohmhndofpbbgfkkoemfialp)で **Live** になっています（2026年9月15日確認）。配布設定は **Hidden**、ストア掲載文は日本語・英語です。
 

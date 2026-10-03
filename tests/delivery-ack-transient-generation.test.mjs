@@ -19,14 +19,19 @@ function createObservableDocument() {
   const observers = new Set();
   class FakeMutationObserver {
     constructor(callback) { this.callback = callback; }
-    observe() { observers.add(this); }
+    observe(_target, options) { this.options = options; observers.add(this); }
     disconnect() { observers.delete(this); }
   }
   return {
     MutationObserver: FakeMutationObserver,
     observerCount: () => observers.size,
-    notify() {
-      for (const observer of [...observers]) observer.callback([{}]);
+    notify(record = { type: "childList" }) {
+      for (const observer of [...observers]) {
+        if (!observer.options[record.type]) continue;
+        if (record.type === "attributes" && observer.options.attributeFilter &&
+            !observer.options.attributeFilter.includes(record.attributeName)) continue;
+        observer.callback([record]);
+      }
     }
   };
 }
@@ -91,7 +96,7 @@ function newRun(workflow, conversationKey, suffix) {
     provider: "chatgpt",
     conversationKey,
     executionSessionId: `session-${suffix}`,
-    contentVersion: "0.4.1",
+    contentVersion: "0.4.2",
     status: "running",
     phase: "ready",
     resumable: true,
@@ -124,7 +129,9 @@ async function runShortReplyDelivery({
   repeat = 1,
   withObservableDom = true,
   readyStableMs = null,
-  pollMs = null
+  pollMs = null,
+  generationMutation = { type: "childList" },
+  ackTimeoutMs = null
 }) {
   const dom = withObservableDom ? createObservableDocument() : null;
   const context = createRuntimeHarness(dom);
@@ -140,10 +147,10 @@ async function runShortReplyDelivery({
       sendCount += 1;
       composer.text = "";
       stopButtonVisible = true;
-      dom?.notify();
+      dom?.notify(generationMutation);
       setTimeout(() => {
         stopButtonVisible = false;
-        dom?.notify();
+        dom?.notify(generationMutation);
       }, generationWindowMs);
     }
   };
@@ -192,6 +199,7 @@ async function runShortReplyDelivery({
   // keeping the suite's real-timer footprint small.
   if (readyStableMs !== null) context.READY_STABLE_MS = readyStableMs;
   if (pollMs !== null) context.POLL_MS = pollMs;
+  if (ackTimeoutMs !== null) context.ACK_TIMEOUT_MS = ackTimeoutMs;
 
   const run = newRun(
     repeatWorkflow(context, { repeat, maxSends: repeat + 1 }),
@@ -234,6 +242,77 @@ test("the acceptance watch never latches without a generation control", () => {
 
   assert.equal(transaction.generationSeen, false, "absent evidence must never be latched");
   context.stopDeliveryAcceptanceWatch(transaction);
+  assert.equal(dom.observerCount(), 0);
+});
+
+for (const attributeName of ["data-testid", "aria-label", "hidden", "style", "class"]) {
+  test(`the acceptance watch latches an attribute-only generation transition: ${attributeName}`, () => {
+    const dom = createObservableDocument();
+    const context = createRuntimeHarness(dom);
+    const transaction = { active: true };
+    let generating = false;
+    context.startDeliveryAcceptanceWatch(transaction, () => generating ? {} : null);
+    generating = true;
+    dom.notify({ type: "attributes", attributeName });
+    generating = false;
+    dom.notify({ type: "attributes", attributeName });
+    assert.equal(transaction.generationSeen, true);
+    assert.equal(dom.observerCount(), 0, "disconnect after the first verified generation edge");
+  });
+}
+
+test("unrelated attributes and text mutations neither consume the watch budget nor confirm delivery", () => {
+  const dom = createObservableDocument();
+  const context = createRuntimeHarness(dom);
+  const transaction = { active: true };
+  context.startDeliveryAcceptanceWatch(transaction, () => null);
+  const before = transaction.acceptanceChecks;
+  for (let index = 0; index < 3000; index += 1) {
+    dom.notify({ type: "attributes", attributeName: "data-unrelated" });
+    dom.notify({ type: "characterData" });
+  }
+  assert.equal(transaction.acceptanceChecks, before);
+  dom.notify({ type: "attributes", attributeName: "aria-label" });
+  assert.equal(transaction.acceptanceChecks, before + 1);
+  assert.equal(transaction.generationSeen, false, "a relevant mutation alone is not generation evidence");
+  context.stopDeliveryAcceptanceWatch(transaction);
+  assert.equal(dom.observerCount(), 0);
+});
+
+test("attribute notifications remain capped and cannot latch for an inactive transaction", () => {
+  const dom = createObservableDocument();
+  const context = createRuntimeHarness(dom);
+  const transaction = { active: true };
+  context.startDeliveryAcceptanceWatch(transaction, () => null);
+  for (let index = 0; index < 3000; index += 1) dom.notify({ type: "attributes", attributeName: "class" });
+  assert.equal(transaction.acceptanceChecks, 2048);
+  assert.equal(transaction.generationSeen, false);
+  assert.equal(dom.observerCount(), 0);
+
+  const inactive = { active: true };
+  let generating = false;
+  context.startDeliveryAcceptanceWatch(inactive, () => generating ? {} : null);
+  inactive.active = false;
+  generating = true;
+  dom.notify({ type: "attributes", attributeName: "data-testid" });
+  assert.equal(inactive.generationSeen, false);
+  assert.equal(dom.observerCount(), 0);
+});
+
+test("an attribute-only short generation confirms each Repeat send exactly once", async () => {
+  const { run, sendCount, dom } = await runShortReplyDelivery({
+    generationWindowMs: 20,
+    controlPlaneLatencyMs: 60,
+    repeat: 3,
+    readyStableMs: 10,
+    pollMs: 30,
+    ackTimeoutMs: 500,
+    generationMutation: { type: "attributes", attributeName: "data-testid" }
+  });
+  assert.equal(run.lastErrorCode, undefined);
+  assert.equal(run.status, "completed");
+  assert.equal(run.cursor.sendsCompleted, 3);
+  assert.equal(sendCount, 3);
   assert.equal(dom.observerCount(), 0);
 });
 
