@@ -97,6 +97,12 @@ test("composer text reads can only originate from provider-specific composer sel
   assert.doesNotMatch(composerBody, /form textarea/);
   assert.doesNotMatch(composerBody, /form \[contenteditable/);
   assert.doesNotMatch(composerBody, /form div\[contenteditable/);
+  assert.match(composerBody, /form\[data-chatgpt-composer\] div\.ProseMirror\[data-composer-markdown\]\[role='textbox'\]\[contenteditable='true'\]/);
+  const selectors = [...composerBody.matchAll(/"([^"\n]+)"/g)].map((match) => match[1]);
+  assert.equal(selectors.length, 5);
+  assert.ok(selectors.every((selector) => selector.includes("prompt-textarea") ||
+    selector === "form[data-chatgpt-composer] div.ProseMirror[data-composer-markdown][role='textbox'][contenteditable='true']"),
+  "each composer text source needs an explicit provider identity");
 });
 
 test("send-button ARIA fallbacks are scoped to the actual composer form", () => {

@@ -31,3 +31,5 @@ jobs:
         run: npm run browser:install -- --with-deps
       - name: Run isolated browser fixture E2E
         run: npm run test:browser
+      - name: Run repeat delivery browser regressions
+        run: npm run test:browser:repeat

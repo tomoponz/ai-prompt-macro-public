@@ -268,7 +268,7 @@ function createBootstrapRaceHarness({ blockAtSubmitted = null, recoveryFails = f
 function repeatFiveStartMessage(context) {
   return {
     type: "AIPM_START",
-    serviceWorkerVersion: "0.4.1",
+    serviceWorkerVersion: "0.4.2",
     executionSessionId: "session-bootstrap-race",
     expectedDocumentInstanceId: context.instanceId,
     expectedConversationKey: "chatgpt:c:bootstrap-race",

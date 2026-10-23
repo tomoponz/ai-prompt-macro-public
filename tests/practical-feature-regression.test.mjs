@@ -13,9 +13,9 @@ const controller = read("../src/content-controller.js");
 const runner = read("../src/content-runner.js");
 const workflow = read("../src/workflow.js");
 
-test("FR1: Practical 0.4.1 preserves the exact Strict content-script chain and narrow authority", () => {
-  assert.equal(manifest.version, "0.4.1");
-  assert.equal(packageJson.version, "0.4.1");
+test("FR1: Practical 0.4.2 preserves the exact Strict content-script chain and narrow authority", () => {
+  assert.equal(manifest.version, "0.4.2");
+  assert.equal(packageJson.version, "0.4.2");
   assert.equal(manifest.default_locale, "ja");
   assert.deepEqual(manifest.permissions, ["storage", "sidePanel", "alarms", "scripting", "power"]);
   assert.deepEqual(manifest.host_permissions, ["https://chatgpt.com/*"]);

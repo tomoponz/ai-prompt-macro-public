@@ -7,6 +7,18 @@ var identityRecoveredRunReads = identityRecoveredRunReads instanceof WeakSet
   ? identityRecoveredRunReads
   : new WeakSet();
 
+function ensureInitialRecovery(controlMessage = null) {
+  if (initialRecoveryPromise) return initialRecoveryPromise;
+  const pending = recoverIfNeeded(controlMessage);
+  initialRecoveryPromise = pending;
+  pending.catch(() => {
+    // A later explicit Start/Resume may retry the durable recovery read. Do not
+    // retry here: status polling must never restart a runner after a failure.
+    if (initialRecoveryPromise === pending) initialRecoveryPromise = null;
+  });
+  return pending;
+}
+
 function markIdentityRecoveredRunRead(run, response) {
   if (!run || typeof run !== "object") return;
   const observation = response?.identityObservation;
@@ -319,6 +331,9 @@ async function resumeRun(controlMessage = null) {
   const invalid = validateControlMessage(controlMessage, run);
   if (invalid) return invalid;
   if (!run || run.status !== "paused") return { ok: false, error: "このタブに一時停止中のRunがありません。" };
+  if (typeof isLocalPauseFinalizing === "function" && isLocalPauseFinalizing(run)) {
+    return { ok: false, error: "一時停止処理中です。少し待ってから再開してください。" };
+  }
 
   try {
     requireRuntimeCursorAuthority(run);
@@ -355,16 +370,23 @@ async function resumeRun(controlMessage = null) {
     if (step?.type === "wait-until") run.acceptLateStepId = step.id;
   }
 
+  const pausedPrompt = typeof takePausedPromptReceipt === "function" ? takePausedPromptReceipt(run) : null;
   run.status = "running";
   run.pauseReason = null;
   run.pauseRequested = false;
   run.pauseRequestedAt = null;
   run.pauseRequestBaseRevision = null;
   run.pauseRequestRevision = null;
-  await saveActiveRun(run, "resume");
+  try {
+    await saveActiveRun(run, "resume");
+  } catch (error) {
+    if (pausedPrompt) disposePausedPromptCandidate(pausedPrompt);
+    throw error;
+  }
 
   localRunnerToken += 1;
-  executeRun(run, localRunnerToken);
+  if (pausedPrompt) pausedPrompt.resumeToken = localRunnerToken;
+  executeRun(run, localRunnerToken, null, pausedPrompt);
   return { ok: true };
 }
 
@@ -408,6 +430,7 @@ async function stopCurrentRun(controlMessage = null) {
   const run = await getActiveRun({ authorityBoundary: "control" });
   const invalid = validateControlMessage(controlMessage, run);
   if (invalid) return invalid;
+  if (typeof revokePausedPromptReceipt === "function") revokePausedPromptReceipt();
   if (!run) return { ok: true };
   const step = currentStep(run);
   if (step?.type === "wait-until") await clearAlarm(run, step);
@@ -459,11 +482,13 @@ async function failClosedStructurallyInvalidRun(run, error) {
   return true;
 }
 
-async function recoverIfNeeded() {
+async function recoverIfNeeded(controlMessage = null) {
   if (recoveryStarted) return;
   recoveryStarted = true;
+  let recovered = false;
   try {
-    await recoverActiveRun();
+    await recoverActiveRun(controlMessage);
+    recovered = true;
   } catch (error) {
     if (["document_identity_unconfirmed", "document_identity_mismatch"].includes(error?.code) &&
         typeof error.runId === "string") {
@@ -471,16 +496,32 @@ async function recoverIfNeeded() {
       if (typeof recordDocumentIdentityFailureDiagnostic === "function") {
         recordDocumentIdentityFailureDiagnostic(error, stopped);
       }
+      recovered = true;
       return;
     }
-    // Stop takes priority over recovery. Rejecting here would poison initialRecoveryPromise,
-    // the barrier AIPM_START awaits, and permanently block a fresh Start in this document.
+    // Stop takes priority over recovery and completes the barrier. A later explicit
+    // Start can then proceed without trying to revive the stopped Run.
     if (!isStopWinsError(error)) throw error;
+    recovered = true;
+  } finally {
+    if (!recovered) recoveryStarted = false;
   }
 }
 
-async function recoverActiveRun() {
+async function recoverActiveRun(controlMessage = null) {
   const run = await getActiveRun({ authorityBoundary: "recovery" });
+  if (controlMessage) {
+    // A retry is authorized by this command, unlike initial automatic recovery.
+    // Reject stale targets and ineligible states before any recovery side effect.
+    const invalid = validateControlMessage(controlMessage, run);
+    if (invalid) throw new Error(invalid.error);
+    if (controlMessage.type === "AIPM_START" && ["running", "paused"].includes(run?.status)) {
+      throw new Error("このタブにはすでにRunがあります。停止してから開始してください。");
+    }
+    if (controlMessage.type === "AIPM_RESUME" && run?.status !== "paused") {
+      throw new Error("このタブに一時停止したRunはありません。");
+    }
+  }
   if (!run || run.provider !== ChatGptAdapter.id) return;
   if (["running", "paused"].includes(run.status)) {
     try {
@@ -679,8 +720,7 @@ function validateControlMessage(message, run = undefined) {
 }
 
 if (globalThis.__AIPM_CONTENT_CONTROLLER_READY__ !== true) {
-  initialRecoveryPromise = recoverIfNeeded();
-  initialRecoveryPromise.catch(() => {});
+  ensureInitialRecovery();
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     cancelActiveRunnerForControl(message);
@@ -725,9 +765,9 @@ if (globalThis.__AIPM_CONTENT_CONTROLLER_READY__ !== true) {
           };
         }
         case "AIPM_START": {
-          await initialRecoveryPromise;
           const invalid = validateControlMessage(message);
           if (invalid) return invalid;
+          await ensureInitialRecovery(message);
           return startRun(message.workflow, {
             bindingTabId: message.bindingTabId,
             keepAwake: message.keepAwake === true,
@@ -738,7 +778,12 @@ if (globalThis.__AIPM_CONTENT_CONTROLLER_READY__ !== true) {
         case "AIPM_RESUME":
         case "AIPM_STOP": {
           if (message.type === "AIPM_PAUSE") return pauseCurrentRun(message);
-          if (message.type === "AIPM_RESUME") return resumeRun(message);
+          if (message.type === "AIPM_RESUME") {
+            const invalid = validateControlMessage(message);
+            if (invalid) return invalid;
+            await ensureInitialRecovery(message);
+            return resumeRun(message);
+          }
           return stopCurrentRun(message);
         }
         default:
