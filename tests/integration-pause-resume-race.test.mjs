@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 import { createWorkflowHarness } from "./helpers/workflow-harness.mjs";
 
 const TEXT = "SYNTHETIC PAUSE FINALIZATION TEXT";
+const runnerSource = fs.readFileSync(new URL("../src/content-runner.js", import.meta.url), "utf8");
 
 function deferred() {
   let resolve;
@@ -111,6 +114,7 @@ for (const boundary of ["pause-response", "lease-release"]) {
         assert.equal(harness.page.clicks, 0);
         assert.equal(writes(harness), 1);
         assert.equal(harness.context.activeRunnerRunId, null);
+        assert.equal(harness.context.localPauseFinalization, null);
 
         assert.equal((await harness.control("AIPM_RESUME")).ok, true);
         await harness.settle();
@@ -127,4 +131,50 @@ for (const boundary of ["pause-response", "lease-release"]) {
         }
       });
   }
+
+  test(`Stop during ${boundary} stays terminal and revokes pending ownership`,
+    { timeout: 10_000 }, async () => {
+      const { harness, release } = await pendingPauseFinalization(boundary);
+      try {
+        assert.equal((await harness.control("AIPM_STOP")).ok, true);
+        assert.equal(harness.stored().status, "stopped");
+        assert.equal((await harness.control("AIPM_RESUME")).ok, false);
+      } finally {
+        release();
+        await harness.settle();
+      }
+      assert.equal(harness.stored().status, "stopped");
+      assert.equal(harness.page.clicks, 0);
+      assert.equal(writes(harness), 1);
+      assert.equal(harness.page.text, TEXT);
+      assert.equal(harness.context.localPauseFinalization, null);
+      assert.equal(harness.context.pausedPromptReceipt, null, "An old Pause response must not restore ownership revoked by Stop");
+    });
+
+  test(`Runner reinjection during ${boundary} preserves the pending guard and revokes ownership`,
+    { timeout: 10_000 }, async () => {
+      const { harness, release } = await pendingPauseFinalization(boundary);
+      const finalizer = harness.context.localPauseFinalization;
+      // Keep the harness's pending-promise tracking while executing the real
+      // production reinjection initializers and replacing their global helpers.
+      const trackedExecute = harness.context.executeRun;
+      try {
+        vm.runInContext(runnerSource, harness.context, { filename: "content-runner-reinjected.js" });
+        harness.context.executeRun = trackedExecute;
+        assert.equal(harness.context.localPauseFinalization, finalizer);
+        assert.equal((await harness.control("AIPM_RESUME")).ok, false);
+      } finally {
+        release();
+        await harness.settle();
+      }
+      assert.equal(harness.context.localPauseFinalization, null);
+      assert.equal(harness.context.pausedPromptReceipt, null);
+      assert.equal(harness.stored().status, "paused");
+      assert.equal((await harness.control("AIPM_RESUME")).ok, true);
+      await harness.settle();
+      assert.equal(harness.stored().pauseReason, "draft_present");
+      assert.equal(harness.page.clicks, 0);
+      assert.equal(writes(harness), 1);
+      assert.equal(harness.page.text, TEXT);
+    });
 }

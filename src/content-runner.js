@@ -52,6 +52,12 @@ function capturePausedPromptCandidate(transaction, binding, run, step) {
 }
 
 function armPausedPromptReceipt(candidate, run) {
+  // A late Pause response cannot restore a Stop-revoked capability or clear one
+  // belonging to a newer runner.
+  if (!pausedPromptRunMatches(candidate, run) || candidate.binding.runnerToken !== localRunnerToken) {
+    disposePausedPromptCandidate(candidate);
+    return;
+  }
   revokePausedPromptReceipt();
   if (run.status === "paused" && run.pauseReason === "user-pause" && !run.outbox &&
       pausedPromptTextMatches(candidate, run, currentStep(run))) {
