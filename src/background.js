@@ -328,6 +328,47 @@ function leaseDocumentMatchesSender(lease, request, sender) {
     lease?.documentInstanceId === request.documentInstanceId;
 }
 
+async function recoverLeaseRenewalFromBoundSender(message, sender, identity, authority) {
+  if (message.type !== "AIPM_LEASE_RENEW" || identity.status !== "unavailable" ||
+      !BOUND_CONTENT_SENDER_RECOVERY_REASONS.has(identity.reason) ||
+      typeof message.nonce !== "string" || !message.nonce) return null;
+
+  // A queued content response can outlive the worker that proved its document.
+  // Reuse the Run-read proof only for the exact existing lease owner. Probe outside
+  // both queues; serialize the final proof/write with lease and Run mutations.
+  return serializeLeaseMutation(() => serializeRunState(authority.tabId, async () => {
+    const executionSessionId = await getExecutionSessionId();
+    if (message.executionSessionId !== executionSessionId) return null;
+    const runKey = activeRunKey(authority.tabId);
+    const key = leaseStorageKey(message.conversationKey);
+    const stored = await chrome.storage.local.get([runKey, key]);
+    const run = stored[runKey];
+    const lease = stored[key];
+    if (run?.status !== "running" || run.runId !== message.runId ||
+        run.executionSessionId !== executionSessionId ||
+        run.conversationKey !== message.conversationKey || run.boundTabId !== authority.tabId ||
+        run.boundDocumentId !== sender?.documentId || run.documentInstanceId !== message.documentInstanceId ||
+        !leaseOwnerMatches(lease, message, sender, executionSessionId) ||
+        lease.documentInstanceId !== message.documentInstanceId) return null;
+
+    const recovered = recoverUnavailableIdentityFromBoundContentSender(identity, run, {
+      ...authority,
+      documentId: sender?.documentId ?? null,
+      documentInstanceId: message.documentInstanceId ?? null,
+      executionSessionId,
+      boundary: "lease-renew",
+      sender
+    });
+    if (!recovered || contentAuthorityInvalidReason(authority.tabId, recovered) ||
+        stopIntentMatches(authority.tabId, message.runId)) return null;
+
+    // This proves this renewal only. Never promote a reusable document grant or
+    // alter the Run, cursor, outbox, nonce, or acquisition authority here.
+    await chrome.storage.local.set({ [key]: { ...lease, expiresAt: Date.now() + LEASE_TTL_MS } });
+    return withIdentityObservation({ ok: true, renewed: true }, recovered);
+  }));
+}
+
 async function mutateConversationLease(message, sender) {
   const invalid = await validateSessionBoundMessage(message);
   if (invalid) return invalid;
@@ -337,6 +378,12 @@ async function mutateConversationLease(message, sender) {
       typeof message?.conversationKey !== "string" || !message.conversationKey.startsWith("chatgpt:")) {
     return { ok: false, error: "Lease要求の対象が不正です。" };
   }
+  const renewalAuthority = {
+    tabId,
+    executionGeneration: requestExecutionGeneration,
+    authorityEpoch: documentAuthorityEpoch(tabId),
+    startedAt: Date.now()
+  };
   let identity = await reconfirmContentDocument(
     tabId,
     sender?.documentId ?? null,
@@ -352,6 +399,8 @@ async function mutateConversationLease(message, sender) {
     sender
   );
   if (identity.status !== "match") {
+    const recovered = await recoverLeaseRenewalFromBoundSender(message, sender, identity, renewalAuthority);
+    if (recovered) return recovered;
     return withIdentityObservation({
       ok: false,
       errorCode: identity.status === "mismatch"

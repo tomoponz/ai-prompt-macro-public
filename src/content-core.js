@@ -38,6 +38,12 @@ var deferredPostCommitDiagnostic = deferredPostCommitDiagnostic && typeof deferr
 var composerInteractionTrackers = composerInteractionTrackers instanceof WeakMap
   ? composerInteractionTrackers
   : new WeakMap();
+// A reinjected core must not inherit paused DOM authority from an earlier load.
+if (typeof promptTextOwnershipLifetimes !== "undefined") {
+  for (const lifetime of promptTextOwnershipLifetimes) lifetime.dispose();
+}
+var promptTextOwnershipLifetimes = new Set();
+var pausedPromptTextReceipts = new WeakMap();
 
 var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 var nowIso = () => new Date().toISOString();
@@ -737,8 +743,84 @@ function promptDeliveryBindingMatches(transaction, binding) {
     left.runnerToken === right.runnerToken;
 }
 
+function createPromptTextOwnershipLifetime() {
+  const navigation = globalThis.navigation;
+  const entry = navigation?.currentEntry;
+  if (!entry || typeof entry.key !== "string" || !entry.key || typeof entry.id !== "string" || !entry.id ||
+      typeof navigation.addEventListener !== "function" || typeof navigation.removeEventListener !== "function" ||
+      typeof globalThis.addEventListener !== "function" || typeof globalThis.removeEventListener !== "function") return null;
+  const lifetime = {
+    revoked: false,
+    matches() {
+      return !this.revoked && globalThis.navigation === navigation &&
+        navigation.currentEntry?.key === entry.key && navigation.currentEntry?.id === entry.id;
+    },
+    dispose() {
+      this.revoked = true;
+      navigation.removeEventListener("currententrychange", revoke);
+      navigation.removeEventListener("navigate", revoke);
+      globalThis.removeEventListener("pagehide", revoke);
+      promptTextOwnershipLifetimes.delete(this);
+    }
+  };
+  const revoke = () => lifetime.dispose();
+  try {
+    navigation.addEventListener("currententrychange", revoke);
+    navigation.addEventListener("navigate", revoke);
+    globalThis.addEventListener("pagehide", revoke);
+    promptTextOwnershipLifetimes.add(lifetime);
+    return lifetime;
+  } catch {
+    try { lifetime.dispose(); } catch {}
+    return null;
+  }
+}
+
+function createPromptDeliveryTransaction(composer, attachmentState, tracker, binding, lifetime = null) {
+  return {
+    active: true, pasteHandled: false, mode: null,
+    attachmentCandidate: null, attachmentSignature: null,
+    composer, composerForm: attachmentState.composerForm, composerSurface: attachmentState.composerSurface,
+    scopeKind: attachmentState.scopeKind, composerDepth: attachmentState.composerDepth,
+    tracker, userMutationEpoch: tracker.epoch,
+    beforeAttachmentNodes: new Set(attachmentState.logicalNodes), beforeAttachmentCount: attachmentState.count,
+    seenAttachmentNodes: new Set(), macroAttachmentObserved: false,
+    candidatesSeen: 0, maxLogicalCandidates: 0, replacements: 0, mutations: 0,
+    lastMutationAt: Date.now(), startedAt: Date.now(), stableSince: Date.now(),
+    lastObservedMode: null, lastObservedCandidate: null, lastObservedTextState: "unknown", lastObservedCount: 0,
+    firstCandidateAt: null, invalidReason: null, observer: null,
+    generationSeen: false, acceptanceObserver: null, acceptanceCheck: null, acceptanceChecks: 0,
+    deliveryClickArmed: false, textOwnershipLifetime: lifetime, pausedTextReceipt: null,
+    binding: Object.freeze({ ...binding })
+  };
+}
+
+function pausedPromptTextProofIsValid(proof, expectedText, binding) {
+  if (!proof || proof.expectedText !== expectedText || !proof.lifetime?.matches() ||
+      proof.binding.documentInstanceId !== instanceId ||
+      !promptDeliveryBindingMatches({ binding: proof.binding }, binding)) return false;
+  const composer = ChatGptAdapter.findComposer();
+  if (composer !== proof.composer || safeComposerSurface(composer)?.node !== proof.surface ||
+      proof.tracker.epoch !== proof.userMutationEpoch ||
+      ChatGptAdapter.getConversationKey() !== proof.binding.conversationKey) return false;
+  const attachments = getScopedComposerAttachmentState(composer);
+  return attachments.known === true && attachments.count === 0 && attachments.hiddenCount === 0 &&
+    composerTextMatchesExpected(expectedText, ChatGptAdapter.getComposerText(composer));
+}
+
+function pausedPromptTextBindingCanAdvance(previous, next) {
+  const fields = ["runId", "executionSessionId", "stepId", "stepIndex", "repeatIndex", "sendsCompleted",
+    "promptHash", "documentInstanceId", "conversationKey"];
+  return Boolean(next && fields.every((key) => previous[key] === next[key]) &&
+    typeof next.deliveryAttemptToken === "string" && next.deliveryAttemptToken &&
+    next.deliveryAttemptToken !== previous.deliveryAttemptToken &&
+    Number.isSafeInteger(next.stateRevision) && next.stateRevision > previous.stateRevision &&
+    Number.isSafeInteger(next.runnerToken) && next.runnerToken > previous.runnerToken);
+}
+
 function inspectPromptDeliveryTransaction(transaction, expectedText, binding, expectedMode = null, options = {}) {
   if (!transaction?.active || transaction.pasteHandled !== true ||
+      (transaction.requiresTextOwnershipLifetime === true && !transaction.textOwnershipLifetime?.matches()) ||
       !promptDeliveryBindingMatches(transaction, binding)) {
     return {
       ok: false,
@@ -979,43 +1061,10 @@ var ChatGptAdapter = {
         attachmentState.hiddenCount !== 0 || !binding || typeof binding !== "object") {
       throw makeError("composer_attachment_unconfirmed");
     }
-    const transaction = {
-      active: true,
-      pasteHandled: false,
-      mode: null,
-      attachmentCandidate: null,
-      attachmentSignature: null,
-      composer,
-      composerForm: attachmentState.composerForm,
-      composerSurface: attachmentState.composerSurface,
-      scopeKind: attachmentState.scopeKind,
-      composerDepth: attachmentState.composerDepth,
-      tracker,
-      userMutationEpoch: tracker.epoch,
-      beforeAttachmentNodes: new Set(attachmentState.logicalNodes),
-      beforeAttachmentCount: attachmentState.count,
-      seenAttachmentNodes: new Set(),
-      macroAttachmentObserved: false,
-      candidatesSeen: 0,
-      maxLogicalCandidates: 0,
-      replacements: 0,
-      mutations: 0,
-      lastMutationAt: Date.now(),
-      startedAt: Date.now(),
-      stableSince: Date.now(),
-      lastObservedMode: null,
-      lastObservedCandidate: null,
-      lastObservedTextState: "unknown",
-      lastObservedCount: 0,
-      firstCandidateAt: null,
-      invalidReason: null,
-      observer: null,
-      generationSeen: false,
-      acceptanceObserver: null,
-      acceptanceCheck: null,
-      acceptanceChecks: 0,
-      binding: Object.freeze({ ...binding })
-    };
+    // Capture navigation lifetime before any focus, paste, or input event can run.
+    const transaction = createPromptDeliveryTransaction(
+      composer, attachmentState, tracker, binding, createPromptTextOwnershipLifetime()
+    );
     startPromptDeliveryObserver(transaction);
     try {
       composer.focus();
@@ -1043,15 +1092,63 @@ var ChatGptAdapter = {
       transaction.pasteHandled = true;
       return transaction;
     } catch (error) {
-      transaction.active = false;
-      transaction.observer?.disconnect?.();
-      transaction.observer = null;
+      this.finishPromptDelivery(transaction);
       throw error;
     }
   },
 
   inspectPromptDelivery(transaction, expectedText, binding, expectedMode = null, options = {}) {
     return inspectPromptDeliveryTransaction(transaction, expectedText, binding, expectedMode, options);
+  },
+
+  capturePausedPromptText(transaction, expectedText, binding) {
+    if (transaction?.pausedTextReceipt || transaction?.deliveryClickArmed !== false ||
+        !transaction?.textOwnershipLifetime?.matches()) return null;
+    const state = inspectPromptDeliveryTransaction(transaction, expectedText, binding, "text");
+    if (state.ok !== true || state.mode !== "text" || state.attachmentState.count !== 0 ||
+        transaction.macroAttachmentObserved === true) return null;
+    const receipt = Object.freeze({});
+    pausedPromptTextReceipts.set(receipt, {
+      source: transaction, expectedText, binding: transaction.binding,
+      composer: transaction.composer, surface: transaction.composerSurface,
+      tracker: transaction.tracker, userMutationEpoch: transaction.userMutationEpoch,
+      lifetime: transaction.textOwnershipLifetime
+    });
+    transaction.pausedTextReceipt = receipt;
+    return receipt;
+  },
+
+  inspectPausedPromptText(receipt, expectedText, binding) {
+    const proof = receipt && typeof receipt === "object" ? pausedPromptTextReceipts.get(receipt) : null;
+    try { return pausedPromptTextProofIsValid(proof, expectedText, binding); } catch { return false; }
+  },
+
+  adoptPausedPromptText(receipt, expectedText, binding) {
+    const proof = receipt && typeof receipt === "object" ? pausedPromptTextReceipts.get(receipt) : null;
+    if (proof) pausedPromptTextReceipts.delete(receipt);
+    try {
+      if (!proof || proof.source.active === true ||
+          !pausedPromptTextBindingCanAdvance(proof.binding, binding) ||
+          !pausedPromptTextProofIsValid(proof, expectedText, proof.binding)) throw makeError("draft_present");
+      const attachments = getScopedComposerAttachmentState(proof.composer);
+      const transaction = createPromptDeliveryTransaction(proof.composer, attachments, proof.tracker, binding, proof.lifetime);
+      transaction.userMutationEpoch = proof.userMutationEpoch;
+      transaction.pasteHandled = true;
+      transaction.requiresTextOwnershipLifetime = true;
+      proof.source.textOwnershipLifetime = null;
+      startPromptDeliveryObserver(transaction);
+      return transaction;
+    } catch {
+      proof?.lifetime?.dispose();
+      throw makeError("draft_present");
+    }
+  },
+
+  disposePausedPromptText(receipt) {
+    const proof = receipt && typeof receipt === "object" ? pausedPromptTextReceipts.get(receipt) : null;
+    if (!proof) return;
+    pausedPromptTextReceipts.delete(receipt);
+    proof.lifetime.dispose();
   },
 
   getPromptDeliveryAckState(transaction, binding, mode) {
@@ -1079,6 +1176,7 @@ var ChatGptAdapter = {
   // Started immediately before the irreversible click so the generation edge cannot be
   // missed while the runner is blocked on its durable write or its cross-context guards.
   startDeliveryAcceptanceWatch(transaction) {
+    transaction.deliveryClickArmed = true;
     startDeliveryAcceptanceWatch(transaction, () => this.findStopButton());
   },
 
@@ -1100,6 +1198,9 @@ var ChatGptAdapter = {
     transaction.observer = null;
     stopDeliveryAcceptanceWatch(transaction);
     transaction.attachmentCandidate = null;
+    if (!transaction.pausedTextReceipt || !pausedPromptTextReceipts.has(transaction.pausedTextReceipt)) {
+      transaction.textOwnershipLifetime?.dispose();
+    }
   },
 
   isGenerating() {

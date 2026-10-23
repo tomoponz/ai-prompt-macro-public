@@ -50,6 +50,10 @@ export const OUTPUT_BLIND_ADAPTER_SURFACE = new Set([
   "startDeliveryAcceptanceWatch",
   "hasObservedDeliveryGeneration",
   "finishPromptDelivery",
+  "capturePausedPromptText",
+  "inspectPausedPromptText",
+  "adoptPausedPromptText",
+  "disposePausedPromptText",
   "isComposerWritable",
   "writePrompt",
   "isGenerating",
@@ -217,6 +221,24 @@ export function createWorkflowHarness(options = {}) {
   const composerForm = { contains: (node) => attachmentNodes.includes(node) };
   const composer = { id: "composer", closest: () => composerForm };
   const promptBindingMatches = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+  const pausedTextReceipts = new WeakMap();
+  const pausedTextProofValid = (proof, text, binding) => Boolean(proof &&
+    proof.text === text && promptBindingMatches(proof.binding, binding) && proof.lifetime?.matches() &&
+    proof.binding.documentInstanceId === context.instanceId && proof.binding.conversationKey === currentConversationKey &&
+    proof.composer === rawAdapter.findComposer() && proof.userMutationEpoch === page.userMutationEpoch &&
+    page.attachmentCount === 0 && page.unscopedAttachmentCount === 0 &&
+    context.composerTextMatchesExpected(text, page.text));
+  const newDeliveryTransaction = (binding, lifetime) => ({
+    active: true, binding: clone(binding), composer, composerForm,
+    userMutationEpoch: page.userMutationEpoch,
+    beforeAttachmentNodes: new Set(attachmentNodes), beforeAttachmentCount: attachmentNodes.length,
+    attachmentCandidate: null, attachmentSignature: null, macroAttachmentObserved: false,
+    mode: null, replacements: 0, candidatesSeen: 0, maxLogicalCandidates: 0, mutations: 0,
+    surfaceMutationBaseline: Number(page.surfaceMutationBatches ?? 0),
+    startedAt: clock, stableSince: clock, lastObservedMode: null, lastObservedCandidate: null,
+    lastObservedTextState: "unknown", lastObservedCount: 0, invalidReason: null,
+    textOwnershipLifetime: lifetime, pausedTextReceipt: null
+  });
   const rawAdapter = {
     id: "chatgpt",
     matches: () => true,
@@ -235,31 +257,7 @@ export function createWorkflowHarness(options = {}) {
     isComposerWritable: () => true,
     writePrompt(text, binding) {
       assert.ok(binding && typeof binding === "object", "production writePrompt requires an explicit binding");
-      const transaction = {
-        active: true,
-        binding: clone(binding),
-        composer,
-        composerForm,
-        userMutationEpoch: page.userMutationEpoch,
-        beforeAttachmentNodes: new Set(attachmentNodes),
-        beforeAttachmentCount: attachmentNodes.length,
-        attachmentCandidate: null,
-        attachmentSignature: null,
-        macroAttachmentObserved: false,
-        mode: null,
-        replacements: 0,
-        candidatesSeen: 0,
-        maxLogicalCandidates: 0,
-        mutations: 0,
-        surfaceMutationBaseline: Number(page.surfaceMutationBatches ?? 0),
-        startedAt: clock,
-        stableSince: clock,
-        lastObservedMode: null,
-        lastObservedCandidate: null,
-        lastObservedTextState: "unknown",
-        lastObservedCount: 0,
-        invalidReason: null
-      };
+      const transaction = newDeliveryTransaction(binding, context.createPromptTextOwnershipLifetime());
       page.activeDeliveryTransactions += 1;
       page.text = text;
       page.pendingPrompt = text;
@@ -303,6 +301,7 @@ export function createWorkflowHarness(options = {}) {
         stableDurationMs: Math.min(30_000, Math.max(0, clock - Number(transaction?.stableSince ?? clock)))
       });
       if (!transaction?.active || transaction.composer !== composer ||
+          (transaction.requiresTextOwnershipLifetime === true && !transaction.textOwnershipLifetime?.matches()) ||
           !promptBindingMatches(transaction.binding, binding) ||
           transaction.userMutationEpoch !== page.userMutationEpoch) {
         return { ok: false, reason: "user-interaction", diagnostic: diagnostic("user-interaction", "unknown", "invalid") };
@@ -399,6 +398,43 @@ export function createWorkflowHarness(options = {}) {
         diagnostic: diagnostic("settled", composerTextState, mode === "text" ? "text-ready" : "attachment-ready")
       };
     },
+    capturePausedPromptText(transaction, text, binding) {
+      if (!transaction?.active || transaction.pausedTextReceipt || !transaction.textOwnershipLifetime?.matches() ||
+          !promptBindingMatches(transaction.binding, binding) || transaction.macroAttachmentObserved ||
+          page.attachmentCount !== 0 || transaction.userMutationEpoch !== page.userMutationEpoch ||
+          !context.composerTextMatchesExpected(text, page.text)) return null;
+      const receipt = Object.freeze({});
+      pausedTextReceipts.set(receipt, {
+        source: transaction, text, binding: clone(binding), composer,
+        userMutationEpoch: transaction.userMutationEpoch, lifetime: transaction.textOwnershipLifetime
+      });
+      transaction.pausedTextReceipt = receipt;
+      return receipt;
+    },
+    inspectPausedPromptText(receipt, text, binding) {
+      return pausedTextProofValid(pausedTextReceipts.get(receipt), text, binding);
+    },
+    adoptPausedPromptText(receipt, text, binding) {
+      const proof = pausedTextReceipts.get(receipt);
+      pausedTextReceipts.delete(receipt);
+      if (!proof || proof.source.active || !context.pausedPromptTextBindingCanAdvance(proof.binding, binding) ||
+          !pausedTextProofValid(proof, text, proof.binding)) {
+        proof?.lifetime?.dispose();
+        throw context.makeError("draft_present");
+      }
+      const transaction = newDeliveryTransaction(binding, proof.lifetime);
+      transaction.userMutationEpoch = proof.userMutationEpoch;
+      transaction.requiresTextOwnershipLifetime = true;
+      proof.source.textOwnershipLifetime = null;
+      page.activeDeliveryTransactions += 1;
+      return transaction;
+    },
+    disposePausedPromptText(receipt) {
+      const proof = pausedTextReceipts.get(receipt);
+      if (!proof) return;
+      pausedTextReceipts.delete(receipt);
+      proof.lifetime.dispose();
+    },
     getPromptDeliveryAckState(transaction, binding, mode) {
       const valid = transaction?.active && promptBindingMatches(transaction.binding, binding) &&
         transaction.userMutationEpoch === page.userMutationEpoch;
@@ -411,6 +447,9 @@ export function createWorkflowHarness(options = {}) {
     finishPromptDelivery(transaction) {
       if (transaction?.active) page.activeDeliveryTransactions = Math.max(0, page.activeDeliveryTransactions - 1);
       if (transaction) transaction.active = false;
+      if (!transaction?.pausedTextReceipt || !pausedTextReceipts.has(transaction.pausedTextReceipt)) {
+        transaction?.textOwnershipLifetime?.dispose();
+      }
     },
     isGenerating: () => (ackConfirms ? clock < page.generationEndsAt : false),
     getGenerationState: () => (page.generationOverride ?? (rawAdapter.isGenerating() ? "generating" : "idle")),
