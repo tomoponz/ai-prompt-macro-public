@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -7,6 +8,18 @@ const postCommitDiagnosticHarness = `
 var testPostCommitDiagnosticInFlight = testPostCommitDiagnosticInFlight || null;
 function requireRuntimeCursorAuthority() { return true; }
 async function confirmedOutboxMatchesCurrentPosition() { return true; }
+// Controller-only fixtures have no input/DOM and deliberately do not grant an
+// append capability. Real append/recovery contracts use the full runner suite.
+async function captureInitialPromptAppend() {
+  if (typeof ChatGptAdapter.preparePromptAppend === "function") {
+    throw new Error("This controller-only fixture does not model input append");
+  }
+}
+function revokeInitialPromptAppend() {}
+async function outboxMatchesCurrentPosition(run) {
+  if (!run?.outbox?.id || !run.outbox.promptHash || !run.outbox.position) return false;
+  throw new Error("Use the full runner fixture to validate a complete outbox");
+}
 function appendPostCommitDiagnostic(type, meta = {}) {
   if (testPostCommitDiagnosticInFlight) return false;
   const pending = Promise.resolve().then(() => appendDiagnostic(type, meta));
@@ -475,7 +488,7 @@ test("re-evaluating the content core does not redeclare lexicals or reset live r
   context.activeRunnerExecutionSessionId = "live-session";
   vm.runInContext(coreSource, context);
 
-  assert.equal(context.__AIPM_CONTENT_CORE__.version, "0.4.2");
+  assert.equal(context.__AIPM_CONTENT_CORE__.version, CURRENT_EXTENSION_VERSION);
   assert.equal(context.__AIPM_CONTENT_CORE__.ready, true);
   assert.equal(context.localRunnerToken, 7);
   assert.equal(context.recoveryStarted, true);
@@ -751,7 +764,7 @@ test("an invalid control handshake cannot cancel the active runner", async () =>
   assert.equal(run.status, "running");
 });
 
-test("Resume fails closed for every persisted unfinished outbox", async () => {
+test("Resume rejects unresolved or malformed persisted outboxes without discarding them", async () => {
   for (const state of ["prepared", "submitted", "confirmed"]) {
     const harness = controllerHarness();
     vm.runInContext(source, harness.context);
@@ -764,6 +777,7 @@ test("Resume fails closed for every persisted unfinished outbox", async () => {
       resumable: true,
       outbox: { state }
     };
+    const originalOutbox = structuredClone(run.outbox);
     let saveCount = 0;
     let executeCount = 0;
     harness.context.getActiveRun = async () => run;
@@ -784,6 +798,7 @@ test("Resume fails closed for every persisted unfinished outbox", async () => {
     assert.equal(run.phase, "ambiguous", state);
     assert.equal(saveCount, 1, state);
     assert.equal(executeCount, 0, state);
+    assert.deepEqual(run.outbox, originalOutbox, state);
   }
 });
 

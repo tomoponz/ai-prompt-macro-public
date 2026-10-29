@@ -5,11 +5,12 @@ import vm from "node:vm";
 
 const read = (path) => fs.readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
-function createReloadHarness(sendMessage) {
+function createReloadHarness(sendMessage, manifest = { version: "0.4.2" }) {
   let click;
   let reloads = 0;
   const requests = [];
   const message = { textContent: "" };
+  const version = { textContent: "" };
   const context = vm.createContext({
     document: {
       querySelector(selector) {
@@ -17,10 +18,12 @@ function createReloadHarness(sendMessage) {
           addEventListener(type, handler) { assert.equal(type, "click"); click = handler; }
         };
         if (selector === "#reloadExtensionMessage") return message;
+        if (selector === "#extensionVersion") return version;
         return null;
       }
     },
     chrome: { runtime: {
+      getManifest() { return manifest; },
       sendMessage(request) {
         requests.push(request.type);
         return sendMessage(request);
@@ -29,7 +32,7 @@ function createReloadHarness(sendMessage) {
     } }
   });
   vm.runInContext(read("src/dev-update.js"), context, { filename: "dev-update.js" });
-  return { click: () => click(), requests, message, reloads: () => reloads };
+  return { click: () => click(), requests, message, version, reloads: () => reloads };
 }
 
 function deferredResponse() {
@@ -146,11 +149,23 @@ test("Side Panel exposes guarded development reload across all tab runs", () => 
   const js = read("src/dev-update.js");
   assert.match(html, /id="reloadExtension"/);
   assert.match(html, /src="dev-update\.js"/);
-  assert.match(js, /chrome\.runtime\.getManifest\(\)\.version/);
   assert.match(js, /AIPM_HAS_ACTIVE_RUNS/);
   assert.match(js, /response\?\.active === true/);
   assert.match(js, /chrome\.runtime\.reload\(\)/);
 });
+
+for (const [label, manifest, expected] of [
+  ["local candidate identifier", { version: "0.4.2", version_name: "0.4.2-local-approved-20261028" }, "0.4.2-local-approved-20261028"],
+  ["release version fallback", { version: "0.4.2" }, "0.4.2"],
+  ["empty identifier fallback", { version: "0.4.2", version_name: "" }, "0.4.2"]
+]) {
+  test(`production version label renders the ${label}`, () => {
+    const harness = createReloadHarness(async () => { throw new Error("display must not query Run state"); }, manifest);
+    assert.equal(harness.version.textContent, expected);
+    assert.equal(harness.requests.length, 0);
+    assert.equal(harness.reloads(), 0);
+  });
+}
 
 test("guarded reload safety copy explains the stop and next action without Run jargon", () => {
   const js = read("src/dev-update.js");

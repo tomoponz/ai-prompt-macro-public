@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
@@ -32,7 +33,7 @@ test("Side Panel renders state, progress, reason, next action, and connection as
   harness.setRelayResponder(() => ({
     ok: true,
     provider: "chatgpt",
-    contentVersion: "0.4.2",
+    contentVersion: CURRENT_EXTENSION_VERSION,
     pageReady: true,
     generationState: "idle",
     blocker: null,

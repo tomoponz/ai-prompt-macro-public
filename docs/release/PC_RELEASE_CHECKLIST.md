@@ -16,7 +16,7 @@
 - [ ] `git diff --check`がPASS
 - [ ] Chrome Desktopでの実ブラウザスモークテスト（live smoke）がPASS
 - [ ] Edge Desktopでの実ブラウザスモークテスト（live smoke）がPASS
-- [ ] Output-Blind / Fail-Closed / 50回の送信上限 / New Chatの明示的なResumeを、実ブラウザで反証テストした
+- [ ] Output-Blind / Fail-Closed / 50回の送信上限 / New Chatの開始前確認と旧Runの明示的なResumeを、実ブラウザで反証テストした
 - [ ] 権限の変更が意図どおりで、`<all_urls>`と`tabs`の権限がない
 - [ ] README / はじめて使う（Getting Started）/ ユーザーガイド / FAQが候補の実装と一致している
 
@@ -60,7 +60,7 @@
 - [ ] 選択中のタブ（selected）とアクティブなタブ（active）が異なる場合、同名タブ、別ウィンドウでも、明示的に選んだ対象への操作だけが届く
 - [ ] タイトルはRun / outbox / 診断情報（diagnostics）/ local・session storageに保存されない
 - [ ] manifestの権限追加が0件
-- [ ] New Chatの自動引き継ぎ（handoff）は未実装。root / Projectとも、最初の送信後の手動確認を維持する
+- [ ] root / ProjectのNew Chatでは新規Startを拒否し、利用者が最初の指示を手動送信して会話IDのある会話を作成してから開始する
 
 ## 自動安全ゲート
 
@@ -74,7 +74,8 @@
 - [ ] 古い書き込み元（stale writer）/ 古いdocument / 古いRun revisionを拒否
 - [ ] 不明なルート / 会話の識別情報を、永続的に安全側で停止（durably fail closed）
 - [ ] New Chatからcanonical conversationへの遷移を自動で採用（adopt）しない
-- [ ] 明示的なResumeだけがNew Chatの対象を採用し、最初のSendを正確に1回として数える
+- [ ] Startは利用者が確認したcanonical conversationとdocumentを固定し、開始準備中の別会話・別documentへの変更を拒否する
+- [ ] 初回送信後の確認待ちで残った旧Runでは、明示的なResumeだけが対象を採用し、その最初のSendを正確に1回として数える
 - [ ] root New Chat / Project New Chat / 戻る・進む（back-forward）/ プログラムによるナビゲーションを網羅するテスト
 - [ ] 送信確認済み（confirmed）の状態からの再読み込み復旧で、重複送信0回
 - [ ] prepared / submittedの曖昧な状態での再読み込みで、自動送信0回
@@ -93,8 +94,9 @@
 - [ ] 選択したタブだけが送信し、別のChatGPTタブへのSendが0回
 - [ ] 再読み込み後に現在のcontent scriptへ再接続し、永続保存された送信確認済みの位置（durable-confirmed position）から継続する
 - [ ] fixtureの回答本文が拡張機能のストレージへ保存されない
-- [ ] root New Chatが最初のSend後にconfirmation-required（確認が必要）となり、明示的なResume前の追加Sendが0回
-- [ ] 明示的なResume後に、canonical conversationで残りのSendが正確に1回
+- [ ] root / ProjectのNew Chatでは新規Startが無効で、自動Sendが0回
+- [ ] 手動初回送信を模したfixture操作後、canonical conversationの確認によりStartが有効になり、明示的なStart後だけ残りを送信する
+- [ ] 互換試験として、初回送信後の確認待ちで残った旧Runは、明示的なResume前の追加Sendが0回、Resume後の残りのSendが各1回
 - [ ] 同じdocument内での会話のナビゲーション後に、追加Sendが0回
 - [ ] 一時的なidentity probeの失敗を複数回注入しても、Repeat=40が正確に40回のSendで完了する
 - [ ] 使用したChromiumの実行ファイルのパスとバージョンを証跡（evidence）へ記録
@@ -122,7 +124,9 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json s
 - [ ] 自動操作の対象はChatGPT Webだけと明記
 - [ ] OpenAI API / APIキーを使わないと明記
 - [ ] ChatGPTアカウントのプラン / 利用上限は別であると明記
-- [ ] New Chatでは最初のSend後に明示的なResumeが必要と明記
+- [ ] New Chatでは実際に使う最初の指示を手動送信し、会話IDのある会話が作成されてからStartすると明記
+- [ ] 手動送信分は自動で差し引かれず、重複を避けるため残りの手順・繰り返し回数を利用者が調整すると明記
+- [ ] 初回送信後の確認待ちで残った旧Runの互換Resumeを、新規Startの手順と区別して記載
 - [ ] 結果が曖昧な送信は自動再試行せず、停止して手動で確認すると明記
 - [ ] ページの再読み込みと、ブラウザの完全な再起動の保証を分けて記載
 - [ ] ブラウザの完全な再起動では、古いRun / 予定を自動再開しないと明記
@@ -136,10 +140,11 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json s
 
 - [ ] インストール後にChatGPTタブを再読み込みし、サイドパネルの接続に成功
 - [ ] 既存のcanonical conversationで、A -> 待機 -> B -> 待機 -> Cが各1回
-- [ ] root New ChatでAを1回送信した後、**確認が必要**になり、Bを送らない
-- [ ] root New Chatで同じcanonical conversationを確認してResumeし、B / Cが各1回
-- [ ] Project New Chatでも自動移行（migration）せず、明示的なResumeが必要
-- [ ] Resume前にページを再読み込みしても、追加Sendが0回
+- [ ] root New ChatではStartが無効で、自動Sendが0回
+- [ ] Aを手動送信して作成された同じcanonical conversationを確認し、手順をB / Cだけに調整してStartするとB / Cが各1回、Aの再送が0回
+- [ ] Project New Chatでも同じ開始前確認を行い、会話作成だけで自動開始しない
+- [ ] 旧Runが初回送信後の確認待ちで残っている場合だけ、対象と初回1回を確認した明示的なResumeにより残りを送信する
+- [ ] 旧Runの確認待ちでResume前にページを再読み込みしても、追加Sendが0回
 - [ ] 戻る / 進むや別の会話への移動で、自動継続が0回
 - [ ] Aの送信確認後にページを再読み込みしても、B / Cが各1回、Aの重複が0回
 - [ ] 待機（Delay）中に再読み込みしても残り時間から継続し、A / B / Cの重複が0回
@@ -154,7 +159,7 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json s
 - [ ] Chromeと同じ、既存の会話での3指示のケース
 - [ ] 安定したcanonical conversationでQuick RunのRepeat=40を無人で実行し、40/40完了、重複0回、誤った会話0回
 - [ ] 上記のRepeat=40の実行中、再読み込み / ナビゲーション / 利用者の操作がないのに、document確認エラーで停止しない
-- [ ] Chromeと同じ、New Chatで明示的にResumeするケース
+- [ ] Chromeと同じ、New Chatの手動初回送信後に残りをStartするケースと、旧Runの互換Resumeのケース
 - [ ] 宣言済みcontent scriptが未接続のときの、`chatgpt.com`に限定した自己修復（self-healing）経路
 - [ ] 拡張機能 / ChatGPTの再読み込み後の、現在のトップdocumentの固定（pinning）
 - [ ] 結果が曖昧な中継（relay）でStartコマンドを再試行しない
@@ -173,7 +178,7 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json s
 
 - [ ] 同じセッション内のページ再読み込みでは、安全な状態だけを復旧する
 - [ ] 結果が曖昧なoutboxでの再読み込みは再開不可の停止となり、自動送信0回
-- [ ] New Chatのconfirmation-required状態で再読み込みしてもpausedのままで、自動送信0回
+- [ ] 旧RunのNew Chat confirmation-required状態で再読み込みしてもpausedのままで、自動送信0回
 - [ ] 実行中にservice workerが再起動しても安全な状態だけを復旧し、重複0回
 - [ ] Chromeを完全に終了 / 再起動しても、以前の実行中Runが自動再開しない
 - [ ] Edgeを完全に終了 / 再起動しても、以前の実行中Runが自動再開しない

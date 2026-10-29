@@ -97,7 +97,11 @@ test("reload relay pins preflight and Start to the active top document", async (
   const response = await invoke({
     type: "AIPM_RELAY_TO_CHATGPT",
     targetTabId: 215,
-    payload: { type: "AIPM_START", workflow: { id: "repeat-5", maxSends: 5 } }
+    payload: {
+      type: "AIPM_START", workflow: { id: "repeat-5", maxSends: 5 },
+      expectedConversationKey: "chatgpt:c:project-conversation",
+      expectedDocumentInstanceId: "project-new-instance"
+    }
   });
 
   const statusMessage = sent.find((item) => item.payload.type === "AIPM_GET_STATUS");

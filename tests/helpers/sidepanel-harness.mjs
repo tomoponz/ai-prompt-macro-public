@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./extension-version.mjs";
 // A minimal DOM/extension shim that lets `src/sidepanel.js` run unmodified under node:test.
 //
 // The Flow Library torture suite needs the *real* Side Panel handlers, not a re-implementation
@@ -160,7 +161,7 @@ function defaultTabStatus(tabId) {
     run: null,
     provider: "chatgpt",
     instanceId: `instance-${tabId}`,
-    contentVersion: "0.4.2",
+    contentVersion: CURRENT_EXTENSION_VERSION,
     discoveryError: null
   };
 }
@@ -229,7 +230,7 @@ export async function installSidePanelHarness({ tabIds = [1, 2], storageSeed = {
             failedChatGptTabs: 0,
             unknownTabFailures: 0,
             discoveryErrors: [],
-            serviceWorkerVersion: "0.4.2",
+            serviceWorkerVersion: CURRENT_EXTENSION_VERSION,
             siteAccessGranted: true
           };
         }
@@ -239,7 +240,7 @@ export async function installSidePanelHarness({ tabIds = [1, 2], storageSeed = {
           return {
             ok: true,
             provider: "chatgpt",
-            contentVersion: "0.4.2",
+            contentVersion: CURRENT_EXTENSION_VERSION,
             pageReady: true,
             generationState: "idle",
             blocker: null,

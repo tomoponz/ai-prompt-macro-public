@@ -1,0 +1,58 @@
+<!doctype html>
+<!-- Observed 2026-10-28 composer DOM, sanitized for offline regression.
+     Personal/local IDs, prompt preview and decorative SVG geometry are replaced.
+     The eleven tile-to-form ancestors, semantic attributes, three card buttons,
+     and no-id ProseMirror editor are retained. This is not a live ChatGPT page. -->
+<meta charset="utf-8">
+<title>Offline observed resource card</title>
+<style>
+  form { width: 700px; }
+  .contents { display: contents; }
+  [hidden], .hidden { display: none !important; }
+  .ProseMirror { min-height: 40px; width: 600px; }
+  .composer-attachment-surface { display: inline-block; width: 240px; min-height: 70px; }
+  button { min-width: 24px; min-height: 24px; }
+</style>
+<form class="relative flex flex-col gap-2" data-composer-placement="home" data-chatgpt-composer="" data-thread-find-composer="true">
+  <div data-above-composer-portal="true" data-above-composer-conversation-id="chatgpt:local-chatgpt:fixture-only" class="relative empty:hidden"></div>
+  <span hidden=""></span><span hidden=""></span><span hidden=""></span><span hidden=""></span>
+  <div class="contents"><div class="contents">
+    <div class="ComposerLayoutRoot-XCKS7O" data-composer-layout="multiline" role="presentation">
+      <div class="relative w-full flex-col gap-2 flex">
+        <input class="hidden" aria-label="ファイルを添付" multiple="" type="file">
+        <div class="ComposerModeSurface-lVLm7j"><div class="relative">
+          <div class="ComposerLayoutBody-uBBf1A" data-composer-layout="multiline" data-composer-body="">
+            <div class="contents">
+              <div class="ComposerLayoutAttachments-bG080e" data-composer-attachments="" data-composer-spacing="default" data-visible-attachments="">
+                <div class="flex flex-wrap items-end gap-2 p-1">
+                  <span class="composer-attachment-surface group/resource-card relative max-w-64 flex-shrink-0">
+                    <button aria-label="Synthetic pasted text preview…" type="button" class="peer/resource-card absolute inset-0"></button>
+                    <span class="flex min-w-0 items-center text-start pointer-events-none relative">
+                      <span class="flex size-10 shrink-0 items-center justify-center"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 2H18V18H2Z" fill="currentColor"></path></svg></span>
+                      <span class="flex min-w-0 flex-1 flex-col">
+                        <span class="truncate text-default">Synthetic pasted text preview…</span>
+                        <span class="truncate text-secondary"><button type="button" class="pointer-events-auto inline-flex underline">テキスト欄に表示<span class="CompactSource-d7ZD01"><svg width="20" height="20" aria-hidden="true"><path d="M5 5L10 10L5 15"></path></svg></span><span class="LeadingSource-d79mNZ"><svg aria-hidden="true" height="16" width="16"><use href="#fixture-chevron"></use></svg></span></button></span>
+                      </span>
+                    </span>
+                    <button type="button" class="absolute flex size-4 top-1 right-1 z-20" aria-label="貼り付けたテキストの添付を削除"><svg width="21" height="21" viewBox="0 0 21 21"><path d="M5 5L16 16M16 5L5 16"></path></svg></button>
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div class="ComposerLayoutFooter-_8IVRO" data-composer-footer-responsive="" data-composer-layout="multiline">
+              <div class="min-w-0 AdaptiveFooterInput-zji599" data-composer-layout="multiline">
+                <div class="contents"><div class="ComposerLayoutInput-KwIAr_" data-composer-input="" data-composer-input-variant="home">
+                  <div data-rich-text-layout="multiline" role="presentation" class="RichTextInput-j_tVa5" data-composer-input-layout="multiline">
+                    <div contenteditable="true" aria-multiline="true" dir="auto" role="textbox" spellcheck="true" tabindex="0" translate="no" class="ProseMirror" data-composer-markdown="" aria-label="ChatGPT に聞く" data-virtualkeyboard="true"><p data-empty-paragraph="true" data-placeholder="ChatGPT に聞く" class="placeholder"><br class="ProseMirror-trailingBreak"></p></div>
+                  </div>
+                </div></div>
+              </div>
+              <div><button type="button" aria-label="ファイルなどを追加" data-composer-navigation-target="add-context">+</button></div>
+              <div><button type="button" aria-label="ChatGPT モデルを選択">Model</button><button type="button" aria-label="音声入力">Voice</button><button type="submit" aria-label="送信">Send</button></div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+    </div>
+  </div></div>
+</form>

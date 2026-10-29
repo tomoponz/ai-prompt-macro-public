@@ -47,8 +47,10 @@ import {
 import {
   canDispatchTargetIntent,
   chooseInitialTargetId,
+  isCanonicalConversationKey,
   isCurrentTargetRequest,
   retainTargetOnRefresh,
+  START_CONVERSATION_REQUIRED_MESSAGE,
   targetHealth
 } from "./target-selection.js";
 import { createReadOnlyBackpressure } from "./read-only-backpressure.js";
@@ -70,6 +72,7 @@ import {
 } from "./editor-defaults.js";
 import {
   diagnosticDetailsRows,
+  diagnosticEventCopyDetails,
   diagnosticsLevelIsDetailed,
   projectDiagnosticEvent,
   projectRunDiagnostic
@@ -212,6 +215,8 @@ let suppressUiSave = false;
 let tabRefreshInFlight = false;
 let tabDiscoveryInfo = { serviceWorkerVersion: null, siteAccessGranted: null, failedChatGptTabs: 0 };
 let diagnosticsLevel = "summary";
+let renderedDiagnosticEventsKey = null;
+let diagnosticEventsRevision = 0;
 let targetEpoch = 0;
 let pendingTargetSwitches = 0;
 let targetSwitchQueue = Promise.resolve();
@@ -990,6 +995,9 @@ async function sendToContent(message, targetTabId = selectedTabId, expectedEpoch
       }));
       const relayError = new Error(response.relayError);
       if (relayErrorCode) relayError.code = relayErrorCode;
+      if (message?.type === "AIPM_START" && response.startDeliveryState === "not-dispatched") {
+        relayError.startDeliveryState = "not-dispatched";
+      }
       if (["read-only-observation", "run-observation"].includes(response?.relayErrorPhase)) {
         relayError.phase = response.relayErrorPhase;
       }
@@ -1646,8 +1654,8 @@ function renderDiagnosticsUx(payload) {
   try {
     projection = projectRunDiagnostic(payload?.run, { blocker: payload?.blocker ?? null });
     events = (Array.isArray(payload?.diagnostics) ? payload.diagnostics.slice(-12) : [])
-      .map((item) => projectDiagnosticEvent(item))
-      .filter(Boolean)
+      .map((item) => ({ projection: projectDiagnosticEvent(item), copyDetails: diagnosticEventCopyDetails(item) }))
+      .filter((item) => item.projection)
       .reverse();
   } catch {
     projection = null;
@@ -1664,19 +1672,83 @@ function renderDiagnosticsUx(payload) {
     "診断表示は実行状態や送信可否を変更しません。";
   renderDiagnosticRows(el.diagnosticsDetails, projection);
 
+  // Status polling must not collapse the event the user is inspecting or erase
+  // a copy result when the saved diagnostics have not changed.
+  const eventsKey = JSON.stringify({ tabId: selectedTabId, targetEpoch, events });
+  if (eventsKey === renderedDiagnosticEventsKey) return;
+  renderedDiagnosticEventsKey = eventsKey;
+  const renderedRevision = ++diagnosticEventsRevision;
+  const renderedTabId = selectedTabId;
+  const renderedTargetEpoch = targetEpoch;
+  const isCurrentEventList = () => diagnosticEventsRevision === renderedRevision &&
+    selectedTabId === renderedTabId && targetEpoch === renderedTargetEpoch;
+
   if (!events.length) {
     const empty = document.createElement("li");
     empty.textContent = "なし";
     el.diagnostics.replaceChildren(empty);
     return;
   }
-  el.diagnostics.replaceChildren(...events.map((event) => {
+  el.diagnostics.replaceChildren(...events.map(({ projection: event, copyDetails }) => {
     const item = document.createElement("li");
+    const disclosure = document.createElement("details");
+    const summary = document.createElement("summary");
     const technical = diagnosticDetailsRows(event)
       .filter(([label]) => ["Code", "Elapsed", "Timestamp", "Attempts"].includes(label))
       .map(([label, value]) => `${label}: ${value}`)
       .join(" · ");
-    item.textContent = technical || event["title"];
+    summary.textContent = technical || event["title"];
+    const details = document.createElement("dl");
+    details.className = "diagnostics-details";
+    renderDiagnosticRows(details, event);
+    disclosure.append(summary);
+    if (copyDetails) {
+      // Capture only the allowlisted snapshot for this row. Never serialize the
+      // status payload, Run, workflow, or input as a clipboard fallback.
+      const copyText = JSON.stringify(copyDetails, null, 2);
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "small";
+      button.dataset.action = "copy-diagnostic-details";
+      button.textContent = "診断の詳細をコピー";
+      const status = document.createElement("p");
+      status.className = "hint";
+      status.dataset.role = "diagnostic-copy-status";
+      status.setAttribute("role", "status");
+      status.setAttribute("aria-live", "polite");
+      const manualCopy = document.createElement("textarea");
+      manualCopy.dataset.role = "diagnostic-copy-fallback";
+      manualCopy.readOnly = true;
+      manualCopy.hidden = true;
+      manualCopy.rows = 6;
+      manualCopy.spellcheck = false;
+      manualCopy.setAttribute("aria-label", "手動コピー用の診断詳細（本文を含みません）");
+      button.addEventListener("click", async () => {
+        if (!isCurrentEventList() || button.disabled) return;
+        button.disabled = true;
+        status.textContent = "";
+        manualCopy.hidden = true;
+        try {
+          if (!navigator.clipboard?.writeText) throw new Error("clipboard-unavailable");
+          await navigator.clipboard.writeText(copyText);
+          if (isCurrentEventList()) status.textContent = "選んだ診断の詳細をコピーしました。";
+        } catch {
+          if (isCurrentEventList()) {
+            status.textContent = "コピーできませんでした。下の診断詳細を選択して手動でコピーしてください。";
+            manualCopy.value = copyText;
+            manualCopy.hidden = false;
+            manualCopy.focus();
+            manualCopy.select();
+          }
+        } finally {
+          if (isCurrentEventList()) button.disabled = false;
+        }
+      });
+      disclosure.append(button, status, manualCopy);
+    }
+    // Keep the action above the metadata inside the bounded, scrollable list.
+    disclosure.append(details);
+    item.append(disclosure);
     return item;
   }));
 }
@@ -1732,6 +1804,10 @@ function renderStatus(payload, { preserveDurableStop = false, stale = null } = {
   el.runCard.dataset.active = String(running || paused || hasDurableStop);
   const connection = targetHealth(selectedTabId, knownTabs, tabDiscoveryInfo.serviceWorkerVersion);
   const targetReady = connection.ready && pendingTargetSwitches === 0 && targetUiReady;
+  const startConversationReady = isCanonicalConversationKey(payload?.conversationKey) &&
+    typeof payload?.instanceId === "string" && Boolean(payload.instanceId);
+  const needsInitialConversation = !running && !paused && !presentationIsStale && targetReady &&
+    payload?.pageReady === true && !payload?.blocker && !startConversationReady;
   const statusContext = {
     run,
     hasTarget: Number.isInteger(selectedTabId),
@@ -1752,7 +1828,7 @@ function renderStatus(payload, { preserveDurableStop = false, stale = null } = {
   // A retained presentation is never mutation authority: every path that could cause a send
   // stays closed until a fresh confirmation arrives. Only Stop, which is a durable revoke,
   // survives — losing Stop is the one failure a stale observation must never cause.
-  const startDisabled = running || paused || !canStartRun(statusContext) || startIntentInFlight || Boolean(pendingStart) ||
+  const startDisabled = running || paused || !canStartRun(statusContext) || !startConversationReady || startIntentInFlight || Boolean(pendingStart) ||
     presentationIsStale || flowInvalid || targetEditorStale || editorReloadInFlight;
   el.start.disabled = startDisabled;
   el.flowStart.disabled = startDisabled;
@@ -1778,6 +1854,8 @@ function renderStatus(payload, { preserveDurableStop = false, stale = null } = {
     el.flowStartReason.textContent = "開始処理中です。重複開始を防ぐため待機しています。";
   } else if (!connection.ready || !payload?.pageReady || Boolean(payload?.blocker)) {
     el.flowStartReason.textContent = "開始不可: 対象ChatGPTタブの接続・入力欄・blockerを確認してください。";
+  } else if (!startConversationReady) {
+    el.flowStartReason.textContent = `開始不可: ${START_CONVERSATION_REQUIRED_MESSAGE}`;
   } else if (!canStartRun(statusContext)) {
     el.flowStartReason.textContent = "開始不可: 対象タブの安全な開始条件を確認できません。";
   } else {
@@ -1800,6 +1878,10 @@ function renderStatus(payload, { preserveDurableStop = false, stale = null } = {
   el.nextAction.textContent = presentationIsStale
     ? "自動的に再確認します。操作は再確認の完了後に有効になります。"
     : statusUx.nextAction;
+  if (needsInitialConversation) {
+    el.message.textContent = START_CONVERSATION_REQUIRED_MESSAGE;
+    el.nextAction.textContent = "最初の指示をChatGPTで手動送信した後、会話が作成されたことを確認してください。自動で開始可否を更新します。マクロの先頭を手動送信した場合は、重複送信を避けるため、その手順や繰り返し回数を自分で調整してから開始してください。APMは自動で差し引きません。";
+  }
   if (unresolvedStart) {
     el.runCard.dataset.state = "confirmation-required";
     el.statusBadge.dataset.state = "confirmation-required";
@@ -1807,13 +1889,13 @@ function renderStatus(payload, { preserveDurableStop = false, stale = null } = {
     el.message.textContent = startUncertaintyText(pendingStart);
     el.nextAction.textContent = "対象タブの状態を更新してください。Runを確認できた場合は、そのRunの停止操作を使えます。";
   }
-  const compact = !run && !payload?.blocker && !presentationIsStale && !hasDurableStop && !unresolvedStart;
+  const compact = !run && !payload?.blocker && !presentationIsStale && !hasDurableStop && !unresolvedStart && !needsInitialConversation;
   renderRunDisclosure({ compact, promoted: unresolvedStart || (!compact && statusUx.kind !== "completed" && statusUx.kind !== "stopped") });
   el.progress.hidden = compact || unresolvedStart;
   el.activeRunWarning.hidden = !(running || paused || hasDurableStop);
   el.startSection.hidden = running || paused || hasDurableStop;
   el.connectionStatus.hidden = statusUx.connection.kind === "available";
-  el.completionOutcome.hidden = compact || unresolvedStart || statusUx.kind === "running" || statusUx.kind === "user-paused";
+  el.completionOutcome.hidden = compact || needsInitialConversation || unresolvedStart || statusUx.kind === "running" || statusUx.kind === "user-paused";
   renderDiagnosticsUx(payload);
 }
 
@@ -2214,6 +2296,8 @@ el.flowExportFile.addEventListener("click", () => {
 async function startSelectedAutomation() {
   const intentTabId = selectedTabId;
   const intentEpoch = targetEpoch;
+  const intentConversationKey = lastStatusPayload?.conversationKey;
+  const intentDocumentInstanceId = lastStatusPayload?.instanceId;
   if (pendingStartsByTab.has(intentTabId)) {
     if (lastStatusPayload) renderStatus(lastStatusPayload, { preserveDurableStop: true });
     return;
@@ -2237,6 +2321,10 @@ async function startSelectedAutomation() {
     if (statusPresentationStale || ["running", "paused"].includes(lastStatusPayload?.run?.status)) {
       throw new Error("対象タブの実行状態を確認してから開始してください。");
     }
+    if (!isCanonicalConversationKey(intentConversationKey) ||
+        typeof intentDocumentInstanceId !== "string" || !intentDocumentInstanceId) {
+      throw new Error(START_CONVERSATION_REQUIRED_MESSAGE);
+    }
     if (intentMode === "flow" && (!reviewedFlowKey || reviewedFlowKey !== currentFlowReviewKey())) {
       throw new Error("Flowの形式と上限を確認し、プレビューを確認してから開始してください。");
     }
@@ -2250,6 +2338,8 @@ async function startSelectedAutomation() {
           pendingTargetSwitches, targetUiReady) || mode !== intentMode ||
           editorEditVersion !== intentEditVersion || targetEditorExternalChangeVersion !== intentExternalVersion ||
           targetEditorStale || editorReloadInFlight ||
+          statusPresentationStale || lastStatusPayload?.conversationKey !== intentConversationKey ||
+          lastStatusPayload?.instanceId !== intentDocumentInstanceId ||
           (expectedEntry && editorStartSourceKey(currentUiState()) !== editorStartSourceKey(expectedEntry))) {
         throw new Error("開始準備中に対象または入力内容が変更されたため、開始を中止しました。内容を確認し直してください。");
       }
@@ -2279,6 +2369,8 @@ async function startSelectedAutomation() {
     }
     const response = await sendToContent({
       type: "AIPM_START",
+      expectedConversationKey: intentConversationKey,
+      expectedDocumentInstanceId: intentDocumentInstanceId,
       workflow,
       readOnlyRecovery: workflow.recovery,
       keepAwake: startSource.keepAwake
@@ -2289,6 +2381,11 @@ async function startSelectedAutomation() {
     await refreshTargetTabs();
   } catch (error) {
     failureMessage = error instanceof Error ? error.message : String(error);
+    // Only the background's dispatch evidence proves non-delivery. Error names
+    // alone do not establish whether an earlier command could still commit.
+    if (error?.startDeliveryState === "not-dispatched") {
+      clearPendingStart(intentTabId, startIntent);
+    }
     retainUnresolvedStart(intentTabId, intentEpoch, startIntent);
   } finally {
     startIntentInFlight = false;

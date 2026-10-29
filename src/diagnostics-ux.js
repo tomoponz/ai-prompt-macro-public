@@ -171,7 +171,10 @@ function boundedInteger(value, max) {
 }
 
 function isoOrNull(value) {
-  if (typeof value !== "string" || !Number.isFinite(Date.parse(value))) return null;
+  // Stored diagnostics use Date.toISOString(). Do not echo permissive Date.parse
+  // inputs: they can contain arbitrary comments alongside a parseable date.
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value) ||
+      !Number.isFinite(Date.parse(value)) || new Date(value).toISOString() !== value) return null;
   return value;
 }
 
@@ -203,6 +206,31 @@ function classify(code) {
       code.includes("bounded") || code === "generation_timeout") return "BOUND";
   if (KNOWN_EVENT_CODES.has(code)) return "USER";
   return "UNKNOWN";
+}
+
+function attachmentSettlementDetails(raw, code) {
+  if (code !== "paste_attachment_settlement" && code !== "paste_attachment_settlement_timeout") return null;
+  const enums = {
+    lastState: ["text-ready", "attachment-pending", "attachment-ready", "ambiguous", "invalid", "unknown"],
+    composerTextState: ["empty", "minimal", "exact", "other", "unknown"],
+    scopeKind: ["form", "marked-ancestor", "bounded-common-ancestor", "unknown"],
+    fallbackRejectReason: ["none", "no-file-tile", "multiple-file-tiles", "no-remove-semantic",
+      "multiple-remove-semantics", "button-count-invalid", "not-group", "outside-surface", "hidden", "provenance-mismatch"]
+  };
+  const result = {};
+  for (const [key, allowed] of Object.entries(enums)) {
+    result[key] = allowed.includes(raw[key]) ? raw[key] : null;
+  }
+  for (const key of ["logicalAttachmentCount", "candidateCount", "candidatesSeen", "fileTileFallbackCount",
+    "derivedRemoveSemanticCount", "maxLogicalAttachmentCount"]) {
+    result[key] = boundedInteger(raw[key], 64);
+  }
+  result.composerDepth = boundedInteger(raw.composerDepth, 8);
+  result.stableDurationMs = boundedInteger(raw.stableDurationMs, 30000);
+  for (const key of ["sendActionable", "fileTileFallbackSeen", "fallbackAccepted", "userEpochChanged"]) {
+    result[key] = typeof raw[key] === "boolean" ? raw[key] : null;
+  }
+  return result;
 }
 
 function detailsFrom(raw, { code, category } = {}) {
@@ -238,11 +266,12 @@ function detailsFrom(raw, { code, category } = {}) {
     sourceLayer,
     failureCode,
     identitySource,
-    phase
+    phase,
+    attachmentSettlement: attachmentSettlementDetails(raw, code)
   };
 }
 
-function specialize(base, code) {
+function specialize(base, code, raw = {}) {
   if (code === "send_confirmed") {
     return {
       ...base,
@@ -309,6 +338,57 @@ function specialize(base, code) {
       safetyMeaning: "上限を超える送信を防ぐ通常の安全動作です。"
     };
   }
+  if (code === "paste_attachment_settlement_timeout" ||
+      (code === "paste_attachment_settlement" && normalizedCode(raw.reason) === "paste_attachment_settlement_timeout")) {
+    // A historical settlement event has no current outbox evidence. Only the
+    // matching durable prepared state supports a pre-click explanation.
+    if (code === "paste_attachment_settlement_timeout" && raw.deliveryCertainty === "prepared") {
+      return {
+        ...base,
+        title: "送信前の入力準備を確認できませんでした",
+        summary: "入力後のテキストや添付の準備状態を制限時間内に確認できず、今回の指示は送信前に停止しました。",
+        safetyMeaning: "入力欄と添付を残し、自動送信と自動再開を止めています。添付の内容が確認済みになったという意味ではありません。",
+        nextAction: "「停止」を押し、ChatGPT側の入力欄と添付を確認してください。手動送信した場合は、重複しないよう残りの手順と回数を調整してから新しく開始してください。"
+      };
+    }
+    if (["submitted", "confirmed"].includes(raw.deliveryCertainty)) {
+      return {
+        ...base,
+        title: "添付の準備確認と送信記録を確認してください",
+        summary: raw.deliveryCertainty === "confirmed"
+          ? "送信は確認済みです。保存された準備タイムアウトの理由だけでは未送信とは判断できません。"
+          : "送信処理中の記録があります。保存された準備タイムアウトの理由だけでは未送信とは判断できません。",
+        safetyMeaning: "同じ指示を自動再送せず、送信記録を保全しています。",
+        nextAction: "ChatGPT側の送信状況を確認し、「停止」を押してください。"
+      };
+    }
+    return {
+      ...base,
+      title: "入力準備の確認が時間切れになった記録です",
+      summary: "入力後のテキストや添付の準備状態を制限時間内に確認できなかった記録です。",
+      safetyMeaning: "この記録だけでは現在の送信状況や添付の内容を判断できません。",
+      nextAction: "現在の実行状態は、上のステータスと理由、およびChatGPT側の状態で確認してください。"
+    };
+  }
+  if (code === "paste_attachment_unverified") {
+    if (["submitted", "confirmed"].includes(raw.deliveryCertainty)) {
+      return {
+        ...base,
+        summary: raw.deliveryCertainty === "confirmed"
+          ? "送信は確認済みです。保存された添付の停止理由だけでは未送信とは判断できません。"
+          : "送信処理中の記録があります。添付の停止理由だけでは未送信とは判断できません。",
+        safetyMeaning: "同じ指示を自動再送せず、送信記録を保全しています。",
+        nextAction: "ChatGPT側の送信状況を確認し、「停止」を押してください。"
+      };
+    }
+    return {
+      ...base,
+      title: "添付の内容を確認できないため停止しました",
+      summary: "入力後に現れた添付と今回のプロンプトの一致を確認できず、送信前に停止しました。",
+      safetyMeaning: "添付の見た目や生成順だけでは内容を保証できません。添付は削除せず、自動送信と自動再開を止めています。",
+      nextAction: "「停止」を押し、ChatGPT側で添付の内容と送信先を確認してください。手動送信後は、送信済みの指示を重複させないよう残りの手順と回数を確認してください。"
+    };
+  }
   if (code === "captcha") return { ...base, summary: "CAPTCHAまたは本人確認を検出したため、自動操作を停止しました。" };
   if (code === "login_required") return { ...base, summary: "ChatGPTへのログインが必要なため、自動操作を停止しました。" };
   if (code === "usage_limit") return { ...base, summary: "ChatGPTの利用上限を検出したため、自動操作を停止しました。" };
@@ -325,7 +405,7 @@ export function projectDiagnostic(raw = {}) {
   const knownCode = category === "UNKNOWN" && !safeUnknown
     ? "UNKNOWN_DIAGNOSTIC"
     : boundedCode(candidate);
-  const copy = specialize(TEMPLATE[category], normalized);
+  const copy = specialize(TEMPLATE[category], normalized, raw);
   return {
     severity: copy.severity,
     category,
@@ -364,6 +444,30 @@ export function projectDiagnosticEvent(raw) {
   return projectDiagnostic({ ...raw, code: type });
 }
 
+/** A selected saved event's metadata, never a raw Run/workflow/storage export. */
+export function diagnosticEventCopyDetails(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const type = normalizedCode(raw.type);
+  if (!KNOWN_EVENT_CODES.has(type)) return null;
+  const result = { found: true, type, at: isoOrNull(raw.at) };
+  for (const key of ["durationMs", "elapsedMs", "deadlineMs"]) {
+    result[key] = boundedInteger(raw[key], 60000);
+  }
+  for (const key of ["attempt", "totalAttempts"]) {
+    result[key] = boundedInteger(raw[key], 50);
+  }
+  result.phase = KNOWN_PHASES.has(raw.phase) ? raw.phase : null;
+  const settlement = attachmentSettlementDetails(raw, type);
+  if (settlement) {
+    Object.assign(result, settlement);
+    result.reason = ["paste_attachment_settlement_timeout", "paste_attachment_unrecognized",
+      "paste_attachment_provenance_lost"].includes(raw.reason) ? raw.reason : null;
+    result.settlementOutcome = ["settled", "timeout", "unrecognized", "provenance-lost"]
+      .includes(raw.settlementOutcome) ? raw.settlementOutcome : null;
+  }
+  return result;
+}
+
 export function diagnosticDetailsRows(projection) {
   if (!projection || typeof projection !== "object") return [];
   const rows = [];
@@ -384,6 +488,22 @@ export function diagnosticDetailsRows(projection) {
   if (details.failureCode) rows.push(["Identity failure", details.failureCode]);
   if (details.identitySource) rows.push(["Identity source", details.identitySource]);
   if (details.phase) rows.push(["Phase", details.phase]);
+  const settlement = details.attachmentSettlement;
+  if (settlement) {
+    for (const [key, label] of [
+      ["lastState", "Attachment state"], ["logicalAttachmentCount", "Logical attachments"],
+      ["candidateCount", "Inspected candidates"],
+      ["composerTextState", "Composer text state"], ["sendActionable", "Send actionable"],
+      ["stableDurationMs", "Stable duration (ms)"], ["candidatesSeen", "Candidates seen"],
+      ["scopeKind", "Composer scope"], ["composerDepth", "Composer depth"],
+      ["fileTileFallbackSeen", "Fallback tile seen"], ["fileTileFallbackCount", "Fallback tile count"],
+      ["derivedRemoveSemanticCount", "Remove control count"], ["fallbackAccepted", "Fallback accepted"],
+      ["fallbackRejectReason", "Fallback reason"], ["userEpochChanged", "User interaction changed"],
+      ["maxLogicalAttachmentCount", "Maximum logical attachments"]
+    ]) {
+      if (settlement[key] != null) rows.push([label, String(settlement[key])]);
+    }
+  }
   return rows;
 }
 

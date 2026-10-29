@@ -33,3 +33,5 @@ jobs:
         run: npm run test:browser
       - name: Run repeat delivery browser regressions
         run: npm run test:browser:repeat
+      - name: Run observed resource-card browser regressions
+        run: npm run test:browser:resource-card

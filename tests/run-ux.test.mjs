@@ -43,7 +43,7 @@ for (const [code, detail] of [
   });
 }
 
-test("confirmed generation timeout projects the actual durable runner result without retrying", async () => {
+test("confirmed generation timeout offers explicit wait-only recovery without replaying its position", async () => {
   const harness = createWorkflowHarness({ generationMs: 5_000 });
   harness.context.GENERATION_TIMEOUT_MS = 1_000;
   await harness.ready();
@@ -56,13 +56,19 @@ test("confirmed generation timeout projects the actual durable runner result wit
   assert.equal(run.lastErrorCode, "generation_timeout");
   assert.equal(run.outbox.state, "confirmed");
   assert.equal(harness.page.clicks, 1);
-  assert.match(projectRunState(run).reason, /送信は確認済みですが、生成完了を確認できないため停止しました/);
-  assert.match(projectRunState(run).reason, /同じ指示は自動再送しません/);
+  assert.equal(run.phase, "confirmed-wait");
+  assert.equal(canResumePausedRun(run), true);
+  assert.match(projectRunState(run).reason, /送信は確認済み/);
+  assert.match(projectRunState(run).reason, /同じ指示を再送せず/);
+  harness.context.GENERATION_TIMEOUT_MS = 10_000;
   const response = await harness.control("AIPM_RESUME");
   await harness.settle();
-  assert.equal(response.ok, false);
-  assert.equal(harness.page.clicks, 1);
-  assert.equal(harness.stored().outbox.state, "confirmed");
+  assert.equal(response.ok, true);
+  assert.equal(harness.page.clicks, 2);
+  assert.deepEqual(harness.clicks().map((entry) => entry.position), ["0:0", "0:1"]);
+  assert.equal(harness.stored().status, "completed");
+  assert.equal(harness.stored().cursor.sendsCompleted, 2);
+  assert.equal(harness.stored().outbox, null);
 });
 
 for (const state of ["prepared", "submitted", "future-unknown"]) {
@@ -249,11 +255,11 @@ test("only the explicit New Chat confirmation bypasses the generic non-resumable
   assert.equal(canResumePausedRun({ status: "running", resumable: true }), false);
 });
 
-test("C3: unfinished outbox states never present generic Resume authority", () => {
+test("C3: outbox records without an explicit recovery phase never present Resume authority", () => {
   for (const state of ["prepared", "submitted", "confirmed", "future-unknown"]) {
     const run = {
       status: "paused",
-      phase: state,
+      phase: "ambiguous",
       pauseReason: "user-pause",
       resumable: true,
       outbox: { state }
@@ -274,7 +280,7 @@ test("C3: resumable pauses without an outbox retain their existing UI paths", ()
   }
 });
 
-test("C3: explicit New Chat confirmation remains the only unfinished-outbox exception", () => {
+test("C3: explicit New Chat confirmation preserves its separate legacy recovery path", () => {
   const run = {
     status: "paused",
     phase: "new-chat-confirmation-required",
@@ -288,13 +294,25 @@ test("C3: explicit New Chat confirmation remains the only unfinished-outbox exce
   assert.match(nextActionForRun({ ...readyContext, run }), /「再開」/);
 });
 
-test("C3: runtime unfinished-outbox guard remains authoritative against stale UI", () => {
-  const source = fs.readFileSync(new URL("../src/content-controller.js", import.meta.url), "utf8");
-  const resumeBody = source.match(/async function resumeRun[\s\S]*?async function pauseCurrentRun/)?.[0];
-  assert.ok(resumeBody);
-  assert.match(resumeBody, /if \(hasUnfinishedOutbox\(run\)\) \{/);
-  assert.match(resumeBody, /markDeliveryReviewRequired\(run\);/);
-  assert.match(resumeBody, /await saveActiveRun\(run\);/);
+test("C3: runtime refuses an uncertain submitted outbox even if a stale UI claimed resumable", async () => {
+  const harness = createWorkflowHarness({ ackConfirms: false });
+  await harness.ready();
+  await harness.start({
+    schemaVersion: 1, id: "stale-resume-ui", name: "Stale resume UI", maxSends: 2,
+    steps: [{ id: "prompt", type: "prompt", delivery: "send", prompt: "TEST", repeat: 2, delayAfterMs: 0 }]
+  });
+  await harness.settle();
+  assert.equal(harness.page.clicks, 1);
+  assert.equal(harness.stored().outbox.state, "submitted");
+  const originalOutbox = structuredClone(harness.stored().outbox);
+  harness.injectDurableRun((run) => ({ ...run, resumable: true }));
+  const response = await harness.control("AIPM_RESUME");
+  await harness.settle();
+  assert.equal(response.ok, false);
+  assert.equal(harness.page.clicks, 1);
+  assert.equal(harness.stored().resumable, false);
+  assert.equal(harness.stored().cursor.sendsCompleted, 0);
+  assert.deepEqual(harness.stored().outbox, originalOutbox);
 });
 
 test("attention and error states provide concrete next actions without exposing unknown codes", () => {

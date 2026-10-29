@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 // T6 — schedule torture.
 //
 // A Wait Until step is the only place where the product converts elapsed wall-clock time
@@ -329,7 +330,7 @@ test("T6: an armed schedule survives only inside its own execution session", asy
     runId: "session-schedule",
     stepId: "wait",
     whenMs: Date.now() + 60_000,
-    serviceWorkerVersion: "0.4.2",
+    serviceWorkerVersion: CURRENT_EXTENSION_VERSION,
     executionSessionId: DEFAULT_SESSION_ID
   }, { tab: { id: tabId } });
   assert.equal(armed.ok, true);
@@ -339,7 +340,7 @@ test("T6: an armed schedule survives only inside its own execution session", asy
     runId: "foreign-schedule",
     stepId: "wait",
     whenMs: Date.now() + 60_000,
-    serviceWorkerVersion: "0.4.2",
+    serviceWorkerVersion: CURRENT_EXTENSION_VERSION,
     executionSessionId: "a-previous-browser-session"
   }, { tab: { id: tabId } });
   assert.equal(foreign.ok, false, "a schedule from another browser session must not be armed");

@@ -106,6 +106,11 @@ function relayStart(tabId) {
     targetTabId: tabId,
     payload: {
       type: "AIPM_START",
+      // Capture the user's observed target before the status hook can navigate.
+      // The document-pinning tests must reach their identity probes, not fail the
+      // independent Start snapshot precondition first.
+      expectedConversationKey: "chatgpt:c:pinned",
+      expectedDocumentInstanceId: currentDocumentInstanceIds.get(tabId),
       workflow: { schemaVersion: 1, maxSends: 1, steps: [{ id: "s", type: "prompt", delivery: "send", prompt: "go", repeat: 1 }] },
       keepAwake: false
     }
@@ -146,6 +151,7 @@ test("STAGE3-A: a mutation is never delivered to a document that replaced the pr
   onStatusRequest = null;
 
   assert.equal(response.ok, false, "a navigated-away document must fail closed");
+  assert.equal(response.relayErrorCode, "DOCUMENT_CHANGED_BEFORE_DELIVERY", "the post-status identity probe must reject the replaced document");
   const delivered = mutations();
   for (const entry of delivered) {
     assert.notEqual(
@@ -176,6 +182,7 @@ test("STAGE3-C: an old-document receiver cannot absorb the mutation once the top
   onStatusRequest = null;
 
   assert.equal(response.ok, false, "the mutation must fail closed rather than reach a different document");
+  assert.equal(response.relayErrorCode, "DOCUMENT_CHANGED_BEFORE_DELIVERY", "the old receiver must not satisfy the current top-document probe");
   assert.notEqual(response.relayError, undefined);
 });
 

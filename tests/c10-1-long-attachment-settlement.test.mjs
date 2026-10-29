@@ -1,12 +1,14 @@
+// Production runner/controller with a modeled adapter and clock. These cases
+// verify lifecycle behavior; production-core DOM recognition has separate tests.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
+import { projectRunState } from "../src/run-ux.js";
 import { createWorkflowHarness } from "./helpers/workflow-harness.mjs";
 
 const LONG_PROMPT = Array(320).fill("C10.1 slow pasted text conversion").join("\n");
 const sidepanelSource = fs.readFileSync(new URL("../src/sidepanel.js", import.meta.url), "utf8");
-const runUxSource = fs.readFileSync(new URL("../src/run-ux.js", import.meta.url), "utf8");
 
 function workflow(repeat = 1) {
   return {
@@ -33,29 +35,40 @@ async function run(options = {}, repeat = 1) {
   return harness;
 }
 
-test("C10.1 R1 RED: a Macro attachment finalized after 20 seconds must still send exactly once", async () => {
+function assertScopedAttachmentCompleted(harness, repeat = 1) {
+  const saved = harness.stored();
+  assert.equal(harness.page.clicks, repeat);
+  assert.equal(saved.status, "completed");
+  assert.equal(saved.lastErrorCode, null);
+  assert.equal(saved.outbox, null);
+  assert.equal(saved.cursor.sendsCompleted, repeat);
+  assert.equal(saved.workflow.steps[0].repeat, repeat);
+  assert.equal(harness.page.attachmentCount, 0);
+  assert.equal(harness.page.activeDeliveryTransactions, 0);
+  assert.equal(harness.transcript.filter((entry) => entry.type === "write").length, repeat);
+  assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, repeat);
+  assert.equal(harness.saves().some((entry) => entry.outbox?.deliveryMode === "paste-attachment"), true);
+}
+
+test("C10.1 R1: a scoped attachment finalized after 20 seconds sends once", async () => {
   const harness = await run({
     onWrite: ({ page }) => { page.text = ""; },
     pasteAttachmentTimeline: [{ afterMs: 20_000, type: "convert" }]
   });
 
-  assert.equal(harness.page.clicks, 1);
-  assert.equal(harness.stored().status, "completed");
-  assert.equal(
-    harness.saves().some((saved) => saved.outbox?.deliveryMode === "paste-attachment"),
-    true
-  );
+  assertScopedAttachmentCompleted(harness);
 });
 
-test("C10.1 R2: a Macro attachment finalized after 25 seconds settles before the deadline", async () => {
+test("C10.1 R2: a scoped attachment finalized after 25 seconds sends before the deadline", async () => {
   const harness = await run({
     onWrite: ({ page }) => { page.text = ""; },
     pasteAttachmentTimeline: [{ afterMs: 25_000, type: "convert" }]
   });
 
-  assert.equal(harness.page.clicks, 1);
-  assert.equal(harness.stored().status, "completed");
-  assert.ok(harness.clicks()[0].at - harness.transcript.find((entry) => entry.type === "write").at < 30_000);
+  assertScopedAttachmentCompleted(harness);
+  const elapsed = harness.clicks()[0].at - harness.transcript.find((entry) => entry.type === "write").at;
+  assert.ok(elapsed >= 25_000);
+  assert.ok(elapsed < 30_000);
 });
 
 test("C10.1 R3: no final attachment by the bounded deadline sends zero", async () => {
@@ -74,27 +87,32 @@ test("C10.1 R3: no final attachment by the bounded deadline sends zero", async (
   );
 });
 
-test("C10.1 pending UI describes bounded conversion without changing Run authority", () => {
+test("C10.1 pending UI describes input verification without changing Run authority", () => {
   assert.match(sidepanelSource, /projectRunUx/);
-  assert.match(runUxSource, /run\?\.phase === "prepared"/);
-  assert.match(runUxSource, /run\?\.outbox\?\.deliveryMode === "pending"/);
-  assert.match(runUxSource, /長文をChatGPTの添付形式へ変換し/);
+  const pending = {
+    status: "running", phase: "prepared",
+    outbox: { state: "prepared", deliveryMode: "pending" }
+  };
+  const before = structuredClone(pending);
+  const display = projectRunState(pending);
+  assert.equal(display.kind, "running");
+  assert.match(display.reason, /入力内容/);
+  assert.match(display.reason, /送信ボタン/);
+  assert.deepEqual(pending, before);
 });
 
-test("C10.1 R4: a final attachment after 5 seconds sends without waiting for the maximum", async () => {
+test("C10.1 R4: a final scoped attachment after 5 seconds sends without waiting for the maximum", async () => {
   const harness = await run({
     onWrite: ({ page }) => { page.text = ""; },
     pasteAttachmentTimeline: [{ afterMs: 5_000, type: "convert" }]
   });
   const write = harness.transcript.find((entry) => entry.type === "write");
-  const click = harness.clicks()[0];
-
-  assert.equal(harness.page.clicks, 1);
-  assert.ok(click.at - write.at >= 5_000);
-  assert.ok(click.at - write.at < 6_000);
+  assertScopedAttachmentCompleted(harness);
+  assert.ok(harness.clicks()[0].at - write.at >= 5_000);
+  assert.ok(harness.clicks()[0].at - write.at < 6_000);
 });
 
-test("C10.1 R5: short TEXT keeps the sub-second fast path", async () => {
+test("C10.1 R5: exact TEXT keeps the sub-second fast path", async () => {
   const harness = await run();
   const write = harness.transcript.find((entry) => entry.type === "write");
   const click = harness.clicks()[0];
@@ -104,7 +122,7 @@ test("C10.1 R5: short TEXT keeps the sub-second fast path", async () => {
   assert.equal(harness.saves().some((saved) => saved.outbox?.deliveryMode === "text"), true);
 });
 
-test("C10.1 R6: a temporary conversion state at 10 seconds and final tile at 20 seconds sends once", async () => {
+test("C10.1 R6: a temporary conversion state waits for the final tile before sending once", async () => {
   const harness = await run({
     onWrite: ({ page }) => { page.text = ""; },
     pasteAttachmentTimeline: [
@@ -113,7 +131,7 @@ test("C10.1 R6: a temporary conversion state at 10 seconds and final tile at 20 
     ]
   });
 
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
   assert.equal(harness.transcript.filter((entry) => entry.type === "paste-attachment-timeline").length, 2);
 });
 
@@ -192,7 +210,7 @@ test("C10.1 R10: document mismatch during settlement sends zero", async () => {
   assert.equal(harness.page.clicks, 0);
 });
 
-test("C10.1 R11: recovered transient identity observation retains fresh exactly-once authority", async () => {
+test("C10.1 R11: recovered identity retains the scoped conversion transaction and sends once", async () => {
   let recoveryObserved = false;
   let harness;
   harness = createWorkflowHarness({
@@ -226,7 +244,7 @@ test("C10.1 R11: recovered transient identity observation retains fresh exactly-
   await harness.settle();
 
   assert.equal(recoveryObserved, true);
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
 });
 
 test("C10.1 R12: reload invalidates local provenance and a residual late tile is never adopted", async () => {
@@ -267,19 +285,17 @@ test("C10.1 R14: a final tile outside the bounded composer surface sends zero", 
   assert.equal(harness.page.clicks, 0);
 });
 
-test("C10.1 R15: ambiguous attachment ACK clicks once and is never retried", async () => {
-  const harness = await run({
-    ackConfirms: false,
-    onWrite: ({ page }) => { page.text = ""; },
-    pasteAttachmentTimeline: [{ afterMs: 5_000, type: "convert" }]
-  });
+test("C10.1 R15: ambiguous exact-text ACK clicks once and is never retried", async () => {
+  const harness = await run({ ackConfirms: false });
 
   assert.equal(harness.page.clicks, 1);
   assert.equal(harness.stored().lastErrorCode, "submission_ambiguous");
   assert.equal(harness.stored().resumable, false);
+  await harness.reload();
+  assert.equal(harness.page.clicks, 1);
 });
 
-test("C10.1 replacement cap permits four bounded React replacements", async () => {
+test("C10.1 four React tile replacements preserve one logical conversion", async () => {
   const harness = await run({
     onWrite: ({ page }) => { page.text = ""; },
     pasteAttachmentTimeline: [
@@ -292,24 +308,24 @@ test("C10.1 replacement cap permits four bounded React replacements", async () =
   });
 
   assert.equal(harness.page.attachmentReplacementCount, 4);
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
 });
 
-test("C10.1 Practical: repeated React tile replacement is advisory while logical state remains safe", async () => {
+test("C10.1 five React tile replacements remain advisory within one scoped conversion", async () => {
   const harness = await run({
     onWrite: ({ page }) => { page.text = ""; },
     pasteAttachmentTimeline: [
       { afterMs: 5_000, type: "convert" },
-      { afterMs: 5_050, type: "replace" },
-      { afterMs: 5_100, type: "replace" },
-      { afterMs: 5_150, type: "replace" },
-      { afterMs: 5_200, type: "replace" },
-      { afterMs: 5_250, type: "replace" }
+      { afterMs: 5_040, type: "replace" },
+      { afterMs: 5_080, type: "replace" },
+      { afterMs: 5_120, type: "replace" },
+      { afterMs: 5_160, type: "replace" },
+      { afterMs: 5_200, type: "replace" }
     ]
   });
 
   assert.equal(harness.page.attachmentReplacementCount, 5);
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
 });
 
 test("C10.1 coalesced mutation batches remain bounded during long conversion", async () => {
@@ -321,10 +337,10 @@ test("C10.1 coalesced mutation batches remain bounded during long conversion", a
     ]
   });
 
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
 });
 
-test("C10.1 Practical: renderer mutation volume is advisory while the final logical state is safe", async () => {
+test("C10.1 renderer mutation volume alone does not reject a scoped final attachment", async () => {
   const harness = await run({
     onWrite: ({ page }) => { page.text = ""; },
     pasteAttachmentTimeline: [
@@ -333,18 +349,19 @@ test("C10.1 Practical: renderer mutation volume is advisory while the final logi
     ]
   });
 
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
 });
 
 for (const repeat of [5, 20, 40]) {
-  test(`C10.1 delayed attachment Repeat=${repeat} uses a fresh transaction per position`, async () => {
+  test(`C10.1 delayed scoped attachment Repeat=${repeat} completes every position exactly once`, async () => {
     const harness = await run({
       onWrite: ({ page }) => { page.text = ""; },
       pasteAttachmentTimeline: [{ afterMs: 20_000, type: "convert" }]
     }, repeat);
 
-    assert.equal(harness.page.clicks, repeat);
-    assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, repeat);
-    assert.equal(harness.stored().status, "completed");
+    assertScopedAttachmentCompleted(harness, repeat);
+    assert.equal((await harness.control("AIPM_RESUME")).ok, false);
+    await harness.settle();
+    assertScopedAttachmentCompleted(harness, repeat);
   });
 }

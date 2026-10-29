@@ -51,6 +51,14 @@ const startPayload = {
   }
 };
 
+function startPayloadForTab(tabId) {
+  return {
+    ...startPayload,
+    expectedConversationKey: "chatgpt:c:torture",
+    expectedDocumentInstanceId: `instance-${tabId}`
+  };
+}
+
 test("T1/T2: one or two eligible ChatGPT tabs remain explicit ID choices", () => {
   assert.equal(chooseInitialTargetId(Number.NaN, [healthy(101, { active: true })]), 101);
   const two = [healthy(101, { active: true }), healthy(202)];
@@ -64,7 +72,7 @@ test("T3/T4: selecting B routes to B even while browser-active A changes indepen
   const B = 302;
   harness.setTabs([browserTab(A, { active: true }), browserTab(B)]);
 
-  const response = await harness.relay(startPayload, B);
+  const response = await harness.relay(startPayloadForTab(B), B);
 
   assert.equal(response.ok, true);
   assert.equal(harness.commandsDelivered(A).length, 0);
@@ -95,7 +103,7 @@ test("T6: identical titles never replace tab ID as routing authority", async () 
   assert.deepEqual(new Set(listed.tabs.map((tab) => tab.tabId)), new Set([A, B]));
   assert.equal(listed.tabs[0].title, listed.tabs[1].title);
 
-  await harness.relay(startPayload, B);
+  await harness.relay(startPayloadForTab(B), B);
   assert.equal(harness.commandsDelivered(A).length, 0);
   assert.equal(harness.commandsDelivered(B).length, 1);
 });
@@ -107,8 +115,8 @@ test("T7: simultaneous explicit starts remain isolated per target tab", async ()
   harness.setTabs([browserTab(A, { active: true }), browserTab(B)]);
 
   const [left, right] = await Promise.all([
-    harness.relay(startPayload, A),
-    harness.relay(startPayload, B)
+    harness.relay(startPayloadForTab(A), A),
+    harness.relay(startPayloadForTab(B), B)
   ]);
 
   assert.equal(left.ok, true);

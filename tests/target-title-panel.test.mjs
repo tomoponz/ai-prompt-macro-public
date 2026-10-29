@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { installSidePanelHarness } from "./helpers/sidepanel-harness.mjs";
@@ -8,9 +9,9 @@ test("production panel keeps title and active state separate from selected-tab a
     let title = "同じ会話タイトル";
     let activeId = 2;
     let secondWindow = 1;
-    const status = id => ({ provider: "chatgpt", contentVersion: "0.4.2", pageReady: true,
+    const status = id => ({ provider: "chatgpt", contentVersion: CURRENT_EXTENSION_VERSION, pageReady: true,
       conversationKey: `chatgpt:c:private-id-${id}`, run: null });
-    h.setListTabsResponder(() => ({ ok: true, serviceWorkerVersion: "0.4.2", tabs: [1, 2].map(tabId => ({
+    h.setListTabsResponder(() => ({ ok: true, serviceWorkerVersion: CURRENT_EXTENSION_VERSION, tabs: [1, 2].map(tabId => ({
       tabId, windowId: tabId === 1 ? 1 : secondWindow, active: tabId === activeId,
       displayTitle: title, status: status(tabId)
     })) }));

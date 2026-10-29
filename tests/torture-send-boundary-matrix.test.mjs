@@ -68,8 +68,9 @@ const POST_CLICK_BOUNDARIES = [
 // Pause is deliberately deferred once `phase="submitting"` is durably committed, so the
 // runner can finish an already-authorized click/ACK exactly once instead of manufacturing
 // submission ambiguity out of a user Pause. Settlement remains wholly pre-click and honors
-// Pause immediately; boundary 19 is the first point whose durable save/control path defers it.
-const FIRST_DEFERRED_PAUSE_BOUNDARY = 19;
+// Pause immediately through the delivery-mode save and final pre-submit check.
+// Boundary 21 is the submitting commit, after which one pending click/ACK is settled.
+const FIRST_DEFERRED_PAUSE_BOUNDARY = 21;
 
 // A durable revision conflict is only observable at the next durable write. Between
 // `save:submitting` and the click there is deliberately no further write, because the click
@@ -339,7 +340,7 @@ test("T2: a blocked pre-click attempt never duplicates across reload plus explic
   }
 });
 
-test("T2: an outbox past the pre-submit checkpoint is never auto-resumable", async () => {
+test("T2: unresolved delivery cannot Resume; confirmed observation can Resume without another click", async () => {
   for (const [boundary, label] of POST_CLICK_BOUNDARIES) {
     for (const faultName of ["document-changes", "run-revision-changes", "blocker-appears", "conversation-changes"]) {
       const { harness, state } = runBoundaryScenario({ boundary, faultName });
@@ -350,7 +351,15 @@ test("T2: an outbox past the pre-submit checkpoint is never auto-resumable", asy
 
       const stored = harness.stored();
       const context = `post-click boundary ${boundary} (${label}) x ${faultName}`;
-      if (stored.outbox && !(stored.phase === "prepared" && stored.outbox.state === "prepared")) {
+      if (stored.phase === "confirmed-wait" && stored.outbox?.state === "confirmed") {
+        assert.equal(stored.resumable, true, context);
+        const clicks = harness.page.clicks;
+        const resume = await harness.control("AIPM_RESUME");
+        await harness.settle();
+        assert.equal(resume.ok, true, context);
+        assert.equal(harness.page.clicks, clicks, `${context}: confirmed delivery is never sent twice`);
+        assert.equal(harness.stored().cursor.sendsCompleted, 1, context);
+      } else if (stored.outbox && !(stored.phase === "prepared" && stored.outbox.state === "prepared")) {
         assert.equal(
           stored.resumable,
           false,

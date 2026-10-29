@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -109,7 +110,7 @@ test("ambiguous first submit in Repeat=3 never clicks a second time", async () =
     provider: "chatgpt",
     conversationKey,
     executionSessionId: "session-qa",
-    contentVersion: "0.4.2",
+    contentVersion: CURRENT_EXTENSION_VERSION,
     status: "running",
     phase: "ready",
     resumable: true,

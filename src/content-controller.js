@@ -267,7 +267,13 @@ async function startRun(workflowInput, options = {}, controlMessage = null) {
     if (!schedulePreflight.ok) {
       return { ok: false, error: "猶予時間を超えて過去になった指定時刻があります。時刻または遅延時の動作を確認してから開始してください。" };
     }
-    await saveActiveRun(run, "start");
+    await captureInitialPromptAppend(run);
+    try {
+      await saveActiveRun(run, "start");
+    } catch (error) {
+      revokeInitialPromptAppend();
+      throw error;
+    }
     // Diagnostics are non-authoritative. Once Start is durably committed, a logging failure
     // must not report failure while leaving a latent running Run for reload recovery.
     appendPostCommitDiagnostic("run_started", { runId: run.runId, phase: run.phase, status: run.status });
@@ -291,6 +297,7 @@ async function resumeNewChatConfirmation(run) {
   const response = await chrome.runtime.sendMessage({
     type: "AIPM_RUN_CONFIRM_NEW_CHAT_TARGET",
     expectedRunId: run.runId,
+    expectedStateRevision: run.stateRevision,
     conversationKey: targetKey,
     documentInstanceId: instanceId,
     readOnlyRecovery: run.workflow?.recovery ?? null,
@@ -348,12 +355,21 @@ async function resumeRun(controlMessage = null) {
     return resumeNewChatConfirmation(run);
   }
 
-  if (["unexpected_attachment", "composer_attachment_unconfirmed", "paste_attachment_provenance_lost",
+  if (["unexpected_attachment", "composer_attachment_unconfirmed", "paste_attachment_unverified", "paste_attachment_provenance_lost",
     "paste_attachment_unrecognized", "paste_attachment_settlement_timeout"].includes(run.lastErrorCode)) {
     return { ok: false, error: run.lastErrorMessage || makeError(run.lastErrorCode).message };
   }
 
-  if (hasUnfinishedOutbox(run)) {
+  const preparedResume = isProvablyUnclickedOutbox(run) && run.resumable === true;
+  const confirmedResume = run.phase === "confirmed-wait" && run.outbox?.state === "confirmed" &&
+    run.resumable === true;
+  if ((preparedResume || confirmedResume) &&
+      !(await outboxMatchesCurrentPosition(run, preparedResume ? "prepared" : "confirmed"))) {
+    markDeliveryReviewRequired(run);
+    await saveActiveRun(run);
+    return { ok: false, error: run.lastErrorMessage };
+  }
+  if (hasUnfinishedOutbox(run) && !preparedResume && !confirmedResume) {
     markDeliveryReviewRequired(run);
     await saveActiveRun(run);
     return { ok: false, error: run.lastErrorMessage };
@@ -371,6 +387,33 @@ async function resumeRun(controlMessage = null) {
   }
 
   const pausedPrompt = typeof takePausedPromptReceipt === "function" ? takePausedPromptReceipt(run) : null;
+  if (!confirmedResume && run.initialInputRequirement && !pausedPrompt) {
+    try {
+      const initialStep = run.workflow.steps.find((step) => step.id === run.initialInputRequirement.stepId);
+      if (!initialAppendForPosition(run, initialStep)) throw makeError("draft_present");
+    } catch {
+      return { ok: false, error: "開始時の入力を含む未送信内容を確認できません。二重追記や内容の欠落を避けるため、停止して入力欄と残りの回数を確認してください。" };
+    }
+  }
+  if (preparedResume && !pausedPrompt) {
+    const composer = ChatGptAdapter.findComposer();
+    try {
+      if (!composer) throw makeError("composer_missing");
+      assertComposerHasNoAttachments(composer);
+      // A nonempty prior attempt is never inferred from text equality. Only the
+      // still-live receipt (or the unconsumed Start snapshot) can authorize reuse.
+      if (!composerIsEffectivelyEmpty(ChatGptAdapter.getComposerText(composer)) &&
+          !initialAppendForPosition(run, currentStep(run))) throw makeError("draft_present");
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  }
+  if (preparedResume) {
+    run.outbox = null;
+    run.phase = "ready";
+  } else if (confirmedResume) {
+    run.phase = "generating";
+  }
   run.status = "running";
   run.pauseReason = null;
   run.pauseRequested = false;
@@ -431,6 +474,7 @@ async function stopCurrentRun(controlMessage = null) {
   const invalid = validateControlMessage(controlMessage, run);
   if (invalid) return invalid;
   if (typeof revokePausedPromptReceipt === "function") revokePausedPromptReceipt();
+  revokeInitialPromptAppend();
   if (!run) return { ok: true };
   const step = currentStep(run);
   if (step?.type === "wait-until") await clearAlarm(run, step);

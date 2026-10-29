@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./extension-version.mjs";
 // A focused Service Worker harness for the torture suites.
 //
 // `tests/background.test.mjs` builds its fake `chrome` inline and grows it per assertion.
@@ -11,7 +12,7 @@
 // `installBackgroundHarness()` installs `globalThis.chrome` and imports `src/background.js`
 // exactly once per test file (module-level listeners and caches are per-import), so a file
 // calls it once and gives each test its own tab id.
-export const EXTENSION_VERSION = "0.4.2";
+export const EXTENSION_VERSION = CURRENT_EXTENSION_VERSION;
 export const DEFAULT_SESSION_ID = "session-torture";
 
 const SESSION_KEY = "aipm.executionSession.v1";

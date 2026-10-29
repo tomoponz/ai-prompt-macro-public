@@ -5,6 +5,8 @@ import test from "node:test";
 const read = (relative) => fs.readFileSync(new URL(relative, import.meta.url), "utf8");
 const manifest = JSON.parse(read("../manifest.json"));
 const packageJson = JSON.parse(read("../package.json"));
+const packageLock = JSON.parse(read("../package-lock.json"));
+const core = read("../src/content-core.js");
 const sidepanel = read("../src/sidepanel.html");
 const sidepanelJs = read("../src/sidepanel.js");
 const workspace = read("../src/workspace.html");
@@ -13,9 +15,15 @@ const controller = read("../src/content-controller.js");
 const runner = read("../src/content-runner.js");
 const workflow = read("../src/workflow.js");
 
-test("FR1: Practical 0.4.2 preserves the exact Strict content-script chain and narrow authority", () => {
-  assert.equal(manifest.version, "0.4.2");
-  assert.equal(packageJson.version, "0.4.2");
+test("FR1: published r2 keeps version fencing, the exact content-script chain and narrow authority", () => {
+  assert.equal(manifest.version, "0.4.3");
+  assert.equal(manifest.version_name, "0.4.3 r2");
+  assert.equal(packageJson.version, manifest.version);
+  assert.equal(packageLock.version, manifest.version);
+  assert.equal(packageLock.packages[""].version, manifest.version);
+  const contentMarkers = [...core.matchAll(/__AIPM_CONTENT_CORE__ = \{ version: "([^"]+)"/g)].map((match) => match[1]);
+  assert.deepEqual(contentMarkers, [manifest.version, manifest.version]);
+  assert.ok(sidepanel.includes(`AI Prompt Macro · ${manifest.version}`));
   assert.equal(manifest.default_locale, "ja");
   assert.deepEqual(manifest.permissions, ["storage", "sidePanel", "alarms", "scripting", "power"]);
   assert.deepEqual(manifest.host_permissions, ["https://chatgpt.com/*"]);

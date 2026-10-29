@@ -1,3 +1,10 @@
+export const START_CONVERSATION_REQUIRED_MESSAGE =
+  "新規チャットでは、ChatGPTで実際に使う最初の指示を手動送信し、会話が作成されてから開始してください。";
+
+export function isCanonicalConversationKey(value) {
+  return typeof value === "string" && /^chatgpt:c:[A-Za-z0-9-]+$/.test(value);
+}
+
 export function chooseInitialTargetId(rememberedTabId, tabs) {
   if (Number.isInteger(rememberedTabId)) return rememberedTabId;
   const available = Array.isArray(tabs) ? tabs : [];

@@ -50,8 +50,17 @@ export function canStartRun({ targetReady = false, pageReady = false, blocker = 
 export function canResumePausedRun(run = null) {
   if (run?.status !== "paused") return false;
   if (run.pauseReason === NEW_CHAT_CONFIRMATION && run.phase === NEW_CHAT_CONFIRMATION) return true;
-  if (run.outbox) return false;
-  if (run.lastErrorCode === "max_sends") return false;
+  if (["max_sends", "unexpected_attachment", "composer_attachment_unconfirmed",
+    "paste_attachment_unverified", "paste_attachment_provenance_lost",
+    "paste_attachment_unrecognized", "paste_attachment_settlement_timeout"].includes(run.lastErrorCode)) return false;
+  if (run.outbox) {
+    // The runtime opts in to these exact recovery states. This projection does
+    // not authorize sending, discard an outbox, or infer delivery from the UI.
+    return run.resumable === true && (
+      (run.phase === "prepared" && run.outbox.state === "prepared") ||
+      (run.phase === "confirmed-wait" && run.outbox.state === "confirmed")
+    );
+  }
   return run.resumable !== false;
 }
 
@@ -66,12 +75,18 @@ function runningReason(run) {
   if (run?.phase === "delay") return "設定した待機時間が終わるまで待っています。";
   if (run?.phase === "prepared" && run?.outbox?.state === "prepared" &&
       run?.outbox?.deliveryMode === "pending") {
-    return "長文をChatGPTの添付形式へ変換し、安全確認の完了を待っています。";
+    return "入力内容と送信ボタンの状態を確認しています。";
   }
   return RUN_STATE_COPY.running.reason;
 }
 
 function confirmationReason(run) {
+  if (run.phase === "prepared" && run.outbox?.state === "prepared") {
+    return "今回の指示は送信前に停止しました。入力内容を保ったまま、再開時に対象と送信条件を再確認します。";
+  }
+  if (run.phase === "confirmed-wait" && run.outbox?.state === "confirmed") {
+    return "送信は確認済みです。再開すると同じ指示を再送せず、生成完了と次の入力準備を再確認します。";
+  }
   const reasons = {
     [NEW_CHAT_CONFIRMATION]: "新しい会話への最初の送信後です。内容と対象会話の確認を待っています。",
     "manual-checkpoint": "確認ポイントに到達しました。内容の確認を待っています。",
@@ -81,7 +96,7 @@ function confirmationReason(run) {
   return reasons[run?.pauseReason] ?? RUN_STATE_COPY["confirmation-required"].reason;
 }
 
-// The presence of an unfinished outbox says only "a send was in flight". It does not say
+// An outbox can describe preparation, uncertain delivery, or confirmed delivery. It does not say
 // which check failed, and every fail-closed with an outbox used to render the same sentence,
 // so an identity or observation failure was indistinguishable from an unconfirmed send. Name
 // the actual cause when the durable record has one, and keep the generic sentence as the
@@ -100,6 +115,15 @@ function failClosedReason(run) {
     }
     return `送信は確認済みですが、${unconfirmed}を確認できないため停止しました。同じ指示は自動再送しません。`;
   }
+  if (reason === "paste_attachment_unverified" && run?.phase === "attachment-blocked" &&
+      run?.outbox?.state === "prepared") {
+    return "入力後に現れた添付の内容を今回のプロンプトと照合できないため、送信前に停止しました。添付は削除していません。";
+  }
+  // This timeout is pre-click only when the current durable outbox is still
+  // prepared. Earlier repetitions may already have been delivered.
+  if (reason === "paste_attachment_settlement_timeout" && run?.outbox?.state === "prepared") {
+    return "入力後のテキストや添付の準備状態を制限時間内に確認できず、今回の指示は送信前に停止しました。入力欄と添付はそのまま残しています。";
+  }
   if (reason.includes("submission_ambiguous") || reason.includes("delivery")) {
     return "送信結果を一意に確認できないため、同じ指示を自動再送せず停止しました。";
   }
@@ -112,8 +136,8 @@ function failClosedReason(run) {
   if (reason.includes("max_sends") || reason.includes("max-sends")) {
     return "送信回数の上限に達したため、自動継続を停止しました。";
   }
-  // An unfinished outbox still means a send was in flight, so the duplicate-send assurance
-  // must remain even when the recorded cause has no dedicated sentence.
+  // Preserve the duplicate-send boundary when the durable record does not
+  // provide an explicit recoverable pre-click or confirmed-wait state.
   if (run?.outbox) {
     return "送信状態を一意に確定できないため、重複送信を避けて自動継続しませんでした。";
   }
@@ -250,6 +274,19 @@ export function nextActionForRun({
     return "次の操作: ChatGPTタブで必要な操作を手動で完了し、上の「更新」を押してください。接続状態と保存済みの実行内容を確認し、「開始」が使える状態になったら押してください。";
   }
   if (run?.status === "paused") {
+    if (canResumePausedRun(run) && run.phase === "prepared" && run.outbox?.state === "prepared") {
+      return "次の操作: ChatGPTの入力欄と送信先を確認し、続けるなら「再開」を押してください。入力の同一性を確認できない場合は追記せず停止します。";
+    }
+    if (canResumePausedRun(run) && run.phase === "confirmed-wait" && run.outbox?.state === "confirmed") {
+      return "次の操作: ChatGPTの生成状態を確認し、続けるなら「再開」を押してください。同じ指示を再送せず、生成完了を再確認して残りへ進みます。";
+    }
+    if ((run.pauseReason ?? run.lastErrorCode) === "paste_attachment_settlement_timeout" &&
+        run.outbox?.state === "prepared") {
+      return "次の操作: 「停止」を押し、ChatGPT側の入力欄と添付を確認してください。自動では再開しません。手動送信した場合は、重複しないよう残りの手順と回数を調整してから新しく開始してください。";
+    }
+    if (run.pauseReason === "paste_attachment_unverified" && run.phase === "attachment-blocked") {
+      return "次の操作: 「停止」を押し、ChatGPT側で添付の内容と送信先を確認してください。手動で送信した場合は、送信済みの指示が重複しないよう残りの手順と回数を自分で設定してから、新しく開始してください。";
+    }
     if (run.pauseReason === NEW_CHAT_CONFIRMATION && canResumePausedRun(run)) {
       return "次の操作: 同じChatGPTタブで、作成された会話と最初の指示が1回だけ送られていることを確認し、「再開」を押してください。";
     }

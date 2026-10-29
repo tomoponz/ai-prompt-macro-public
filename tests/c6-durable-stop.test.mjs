@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -22,7 +23,7 @@ function statusFor(run) {
   return {
     ok: true,
     provider: "chatgpt",
-    contentVersion: "0.4.2",
+    contentVersion: CURRENT_EXTENSION_VERSION,
     pageReady: true,
     generationState: "idle",
     blocker: null,

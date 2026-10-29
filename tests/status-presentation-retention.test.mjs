@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 /*
   A refresh that never ran must not erase what the tab already told us.
 
@@ -36,7 +37,7 @@ function healthyStatus(run) {
   return {
     ok: true,
     provider: "chatgpt",
-    contentVersion: "0.4.2",
+    contentVersion: CURRENT_EXTENSION_VERSION,
     pageReady: true,
     generationState: "idle",
     blocker: null,

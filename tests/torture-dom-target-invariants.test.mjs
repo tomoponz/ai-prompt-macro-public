@@ -765,6 +765,100 @@ test("C10.2 R3: file-tile without a unique remove semantic fails closed", () => 
   assert.equal(state.fallbackRejectReason, "no-remove-semantic");
 });
 
+// Synthetic overlap between the generic-testid and historical live-tile paths.
+// This is a code regression fixture, not a claim about the user's current DOM.
+function makeOverlappingFileTile(testId = "file-preview", options = {}) {
+  const tile = makeLiveFileTile({ buttonCount: 3, removeCount: 1, ordinarySvgCount: 1, ...options });
+  tile.attributes["data-testid"] = testId;
+  tile.selectors.push("[data-testid]");
+  return tile;
+}
+
+for (const testId of ["file-preview", "file-card", "composer-pasted-text-preview"]) {
+  test(`fallback bookkeeping: generic ${testId} rejection must not suppress an accepted live tile`, () => {
+    const { context, surface, composer } = makeLiveComposerFixture();
+    assert.equal(context.ChatGptAdapter.getComposerAttachmentState(composer).count, 0);
+    const { binding, transaction } = makeLiveDeliveryTransaction(context, surface, composer);
+    const tile = makeOverlappingFileTile(testId);
+    surface.children[0].children = [tile];
+
+    const state = context.ChatGptAdapter.getComposerAttachmentState(composer);
+    assert.equal(state.known, true);
+    assert.equal(state.count, 1, "generic inspection must not consume the later fallback candidate");
+    assert.equal(state.inspectedCandidates, 1, "overlapping entry points count one physical candidate");
+    assert.deepEqual([...state.logicalNodes], [tile]);
+    assert.equal(state.fileTileFallbackSeen, true);
+    assert.equal(state.fileTileFallbackCount, 1);
+    assert.equal(state.derivedRemoveSemanticCount, 1);
+    assert.equal(state.fallbackAccepted, true);
+    assert.equal(state.fallbackRejectReason, "none");
+
+    const observed = context.ChatGptAdapter.inspectPromptDelivery(
+      transaction, "test".repeat(20_160), binding, null, { settling: true }
+    );
+    assert.equal(observed.ok, true);
+    assert.equal(observed.mode, "paste-attachment");
+    assert.equal(observed.diagnostic.lastState, "attachment-ready");
+    assert.equal(observed.diagnostic.candidatesSeen, 1);
+    assert.equal(observed.diagnostic.logicalAttachmentCount, 1);
+    assert.equal(observed.diagnostic.sendActionable, true);
+    // This proves detector readiness, not attachment bytes or permission to Send.
+  });
+}
+
+test("fallback bookkeeping: unclassified generic candidates keep the surface unknown within the unique-node budget", () => {
+  const rejected = count => Array.from({ length: count }, () => new SyntheticElement(["[data-testid]"], {
+    attributes: { "data-testid": "file-preview" }
+  }));
+  const tile = makeOverlappingFileTile();
+  const bounded = makeLiveComposerFixture([...rejected(63), tile]);
+  const state = bounded.context.ChatGptAdapter.getComposerAttachmentState(bounded.composer);
+  assert.equal(state.known, false, "unclassified file-shaped candidates cannot disappear into a clean baseline");
+  assert.equal(state.inspectedCandidates, 64);
+  assert.equal(state.count, 1);
+  assert.deepEqual([...state.logicalNodes], [tile]);
+
+  for (const tiles of [rejected(65), [...rejected(64), makeOverlappingFileTile()]]) {
+    const excessive = makeLiveComposerFixture(tiles);
+    assert.equal(excessive.context.ChatGptAdapter.getComposerAttachmentState(excessive.composer).known, false);
+  }
+});
+
+test("fallback bookkeeping: missing or ambiguous remove semantics and oversized or hidden tiles remain rejected", () => {
+  for (const [options, reason] of [
+    [{ removeCount: 0 }, "no-remove-semantic"],
+    [{ removeCount: 2 }, "multiple-remove-semantics"],
+    [{ buttonCount: 9 }, "button-count-invalid"],
+    [{ visible: false }, "hidden"]
+  ]) {
+    const fixture = makeLiveComposerFixture([makeOverlappingFileTile("file-preview", options)]);
+    const state = fixture.context.ChatGptAdapter.getComposerAttachmentState(fixture.composer);
+    assert.equal(state.known, false, reason);
+    assert.equal(state.fallbackAccepted, false, reason);
+    assert.equal(state.fallbackRejectReason, reason);
+  }
+});
+
+test("fallback bookkeeping: multiple, pre-existing and user-raced tiles never become owned delivery", () => {
+  for (const scenario of ["multiple", "pre-existing", "user-race"]) {
+    const tiles = [makeOverlappingFileTile()];
+    if (scenario === "multiple") tiles.push(makeOverlappingFileTile("file-card"));
+    const fixture = makeLiveComposerFixture(tiles);
+    const { binding, transaction } = makeLiveDeliveryTransaction(
+      fixture.context, fixture.surface, fixture.composer, scenario === "pre-existing" ? tiles : []
+    );
+    if (scenario === "user-race") transaction.tracker.epoch += 1;
+    const observed = fixture.context.ChatGptAdapter.inspectPromptDelivery(
+      transaction, "test".repeat(20_160), binding, null, { settling: true }
+    );
+    assert.equal(observed.ok, false, scenario);
+    assert.equal(observed.reason, {
+      multiple: "extra-attachment", "pre-existing": "attachment-provenance-lost", "user-race": "user-interaction"
+    }[scenario]);
+    assert.equal(transaction.candidatesSeen, 0, scenario);
+  }
+});
+
 test("C10.2 R4: two derived remove controls are ambiguous", () => {
   const tile = makeLiveFileTile({ removeCount: 2 });
   const { context, composer } = makeLiveComposerFixture([tile]);

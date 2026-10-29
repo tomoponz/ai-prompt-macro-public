@@ -1,3 +1,5 @@
+// Production runner/controller with a modeled adapter and clock. These cases
+// verify lifecycle behavior; production-core DOM recognition has separate tests.
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -36,6 +38,21 @@ async function runHarness(options = {}, { repeat = 1, prompt } = {}) {
   return { harness, response };
 }
 
+function assertScopedAttachmentCompleted(harness, repeat = 1) {
+  const saved = harness.stored();
+  assert.equal(harness.page.clicks, repeat);
+  assert.equal(saved.status, "completed");
+  assert.equal(saved.lastErrorCode, null);
+  assert.equal(saved.outbox, null);
+  assert.equal(saved.cursor.sendsCompleted, repeat);
+  assert.equal(saved.workflow.steps[0].repeat, repeat);
+  assert.equal(harness.page.attachmentCount, 0);
+  assert.equal(harness.page.activeDeliveryTransactions, 0);
+  assert.equal(harness.transcript.filter((entry) => entry.type === "write").length, repeat);
+  assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, repeat);
+  assert.equal(harness.saves().some((entry) => entry.outbox?.deliveryMode === "paste-attachment"), true);
+}
+
 test("C9 R1: a pre-existing attachment blocks Prompt mutation and Send", async () => {
   const { harness } = await runHarness({ initialAttachmentCount: 1 });
   assert.equal(harness.transcript.some((entry) => entry.type === "write"), false);
@@ -48,19 +65,19 @@ test("C9 R2: a short Prompt remains TEXT mode and sends exactly once", async () 
   assert.equal(harness.saves().some((run) => run.outbox?.deliveryMode === "text"), true);
 });
 
-test("C9 R3 RED: a Macro long paste converted to one attachment sends exactly once", async () => {
+test("C9 R3: a scoped long-paste conversion sends exactly once", async () => {
   const { harness, response } = await startAndSettle(1);
   assert.equal(response.ok, true);
-  assert.equal(harness.page.clicks, 1);
-  assert.equal(harness.stored().status, "completed");
+  assertScopedAttachmentCompleted(harness);
 });
 
-test("C9 R4 RED: Macro paste attachment delivery repeats five times exactly once", async () => {
+test("C9 R4: scoped paste conversion completes five distinct positions without replay", async () => {
   const { harness, response } = await startAndSettle(5);
   assert.equal(response.ok, true);
-  assert.equal(harness.page.clicks, 5);
-  assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, 5);
-  assert.equal(harness.stored().status, "completed");
+  assertScopedAttachmentCompleted(harness, 5);
+  assert.equal((await harness.control("AIPM_RESUME")).ok, false);
+  await harness.settle();
+  assertScopedAttachmentCompleted(harness, 5);
 });
 
 for (const userRace of ["file-attach", "drop", "paste", "typing", "attachment-remove"]) {
@@ -82,17 +99,15 @@ test("C9 R6: an unknown second attachment after Macro paste sends zero", async (
   assert.equal(harness.page.clicks, 0);
 });
 
-test("C9 R7 Practical: React may replace the iteration-owned tile before click", async () => {
+test("C9 R7: React tile replacement retains one logical scoped attachment and sends once", async () => {
   const { harness } = await runHarness({
-    convertPasteToAttachment: true,
-    onSave: ({ run, page }) => {
-      if (run.phase !== "submitting") return;
-      page.attachmentCount = 0;
-      page.attachmentCount = 1;
-    }
+    pasteAttachmentTimeline: [
+      { afterMs: 300, type: "convert" },
+      { afterMs: 420, type: "replace" }
+    ]
   });
-  assert.equal(harness.page.clicks, 1);
-  assert.equal(harness.stored().status, "completed");
+  assert.equal(harness.page.attachmentReplacementCount, 1);
+  assertScopedAttachmentCompleted(harness);
 });
 
 test("C9 R8: a document change during attachment delivery sends zero", async () => {
@@ -185,42 +200,45 @@ test("C9 R12: reload before click loses local provenance and never auto-sends", 
   assert.equal(harness.page.clicks, 0);
 });
 
-test("C9 R13: ambiguous attachment ACK never retries the irreversible click", async () => {
-  const { harness } = await runHarness({ convertPasteToAttachment: true, ackConfirms: false });
+test("C9 R13: ambiguous converted-attachment ACK never retries the irreversible click", async () => {
+  const { harness } = await runHarness({ ackConfirms: false, convertPasteToAttachment: true });
   assert.equal(harness.page.clicks, 1);
   await harness.reload();
   assert.equal(harness.page.clicks, 1);
 });
 
-test("C9 R14: each Repeat position creates a fresh attachment transaction", async () => {
-  const { harness } = await runHarness({ convertPasteToAttachment: true }, { repeat: 2 });
+test("C9 R14: each exact-text Repeat position creates a fresh delivery transaction", async () => {
+  const { harness } = await runHarness({}, { repeat: 2 });
   assert.equal(harness.page.clicks, 2);
   assert.deepEqual(harness.clicks().map((entry) => entry.position), ["0:0", "0:1"]);
   assert.equal(harness.page.attachmentCount, 0);
+  assert.equal(harness.transcript.filter((entry) => entry.type === "write").length, 2);
 });
 
-test("C9 R15: a residual sent attachment prevents every later position", async () => {
+test("C9 R15: an attachment appearing after a confirmed text Send prevents the next position", async () => {
   const { harness } = await runHarness({
-    convertPasteToAttachment: true,
-    preserveAttachmentAfterClick: true
+    onRunGet: ({ storedRun, page }) => {
+      if (storedRun?.cursor.sendsCompleted === 1) page.attachmentCount = 1;
+    }
   }, { repeat: 2 });
   assert.equal(harness.page.clicks, 1);
   assert.equal(harness.page.attachmentCount, 1);
+  assert.equal(harness.stored().lastErrorCode, "unexpected_attachment");
+  assert.equal(harness.stored().cursor.sendsCompleted, 1);
 });
 
 for (const repeat of [20, 40]) {
-  test(`C9 R${repeat === 20 ? 16 : 17}: attachment Repeat=${repeat} completes exactly`, async () => {
-    const { harness } = await runHarness({ convertPasteToAttachment: true }, { repeat });
+  test(`C9 R${repeat === 20 ? 16 : 17}: exact-text Repeat=${repeat} completes exactly`, async () => {
+    const { harness } = await runHarness({}, { repeat });
     assert.equal(harness.page.clicks, repeat);
     assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, repeat);
     assert.equal(harness.stored().status, "completed");
   });
 }
 
-test("C9 R18: C8 recovered identity keeps the same attachment transaction exactly once", async () => {
+test("C9 R18: C8 recovered identity keeps an exact-text transaction exactly once", async () => {
   let recovered = false;
   const { harness } = await runHarness({
-    convertPasteToAttachment: true,
     onRunGet: ({ storedRun }) => {
       if (!recovered && storedRun?.outbox?.state === "prepared") {
         recovered = true;
@@ -243,6 +261,7 @@ test("C9 R18: C8 recovered identity keeps the same attachment transaction exactl
       return null;
     }
   });
+  assert.equal(recovered, true);
   assert.equal(harness.page.clicks, 1);
 });
 
@@ -275,7 +294,7 @@ test("C9 R19: an unknown attachment added after C8 recovery sends zero", async (
 });
 
 test("C9 R20: assistant-history attachments are outside composer authority", async () => {
-  const harness = createWorkflowHarness({ convertPasteToAttachment: true });
+  const harness = createWorkflowHarness();
   harness.page.assistantAttachmentCount = 9;
   await harness.ready();
   await harness.start(attachmentWorkflow());
@@ -284,7 +303,7 @@ test("C9 R20: assistant-history attachments are outside composer authority", asy
   assert.equal(harness.adapterCalls.has("readAssistantAttachment"), false);
 });
 
-test("C9 Pause: attachment Send #2 is confirmed once, then Resume continues at #3", async () => {
+test("C9 Pause: converted Send #2 is confirmed once, then Resume continues at #3", async () => {
   let armed = true;
   let pauseResponse = null;
   let harness;
@@ -316,7 +335,7 @@ test("C9 Pause: attachment Send #2 is confirmed once, then Resume continues at #
   assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, 5);
 });
 
-test("C9 sequence: long A/B, short C, long D preserve exact order and mode", async () => {
+test("C9 sequence: scoped long A/B, short C, long D preserve order across delivery modes", async () => {
   const prompts = ["A", "B", "D"].map((value) => Array(400).fill(value).join("\n"));
   prompts.splice(2, 0, "C SHORT");
   const workflow = {
@@ -333,12 +352,12 @@ test("C9 sequence: long A/B, short C, long D preserve exact order and mode", asy
       delayAfterMs: 0
     }))
   };
-  const harness = createWorkflowHarness({
-    convertPasteToAttachment: ({ text }) => text !== "C SHORT"
-  });
+  const harness = createWorkflowHarness({ convertPasteToAttachment: ({ text }) => text.length > 600 });
   await harness.ready();
   await harness.start(workflow);
   await harness.settle();
   assert.deepEqual(harness.clicks().map((entry) => entry.prompt), prompts);
   assert.equal(harness.page.clicks, 4);
+  assert.equal(harness.saves().some((run) => run.outbox?.deliveryMode === "paste-attachment"), true);
+  assert.equal(harness.saves().some((run) => run.outbox?.deliveryMode === "text"), true);
 });

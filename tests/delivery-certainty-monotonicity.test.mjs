@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -236,7 +237,7 @@ function createHarness(options = {}) {
         conversationKey: adapter.getConversationKey(),
         documentInstanceId: context.instanceId,
         executionSessionId: "session-test",
-        contentVersion: "0.4.2",
+        contentVersion: CURRENT_EXTENSION_VERSION,
         boundTabId: 1,
         workflow,
         plannedSends: repeat,
@@ -300,7 +301,7 @@ test("Stop remains terminal when run_stopped diagnostic storage fails", async ()
 
   const response = await harness.context.stopCurrentRun({
     type: "AIPM_STOP",
-    serviceWorkerVersion: "0.4.2",
+    serviceWorkerVersion: CURRENT_EXTENSION_VERSION,
     executionSessionId: run.executionSessionId,
     expectedDocumentInstanceId: run.documentInstanceId,
     expectedConversationKey: run.conversationKey,
@@ -322,7 +323,7 @@ test("Stop remains terminal when run_stopped diagnostic storage fails", async ()
   assert.equal(reload.page.clicks, 0, "Stop must prevent reload recovery sends");
   const resume = await reload.context.resumeRun({
     type: "AIPM_RESUME",
-    serviceWorkerVersion: "0.4.2",
+    serviceWorkerVersion: CURRENT_EXTENSION_VERSION,
     executionSessionId: stopped.executionSessionId,
     expectedDocumentInstanceId: reload.context.instanceId,
     expectedConversationKey: stopped.conversationKey,
@@ -418,7 +419,7 @@ test("N3: never-settling Stop diagnostic cannot block the control response or te
 
   const response = await harness.context.stopCurrentRun({
     type: "AIPM_STOP",
-    serviceWorkerVersion: "0.4.2",
+    serviceWorkerVersion: CURRENT_EXTENSION_VERSION,
     executionSessionId: run.executionSessionId,
     expectedDocumentInstanceId: run.documentInstanceId,
     expectedConversationKey: run.conversationKey,

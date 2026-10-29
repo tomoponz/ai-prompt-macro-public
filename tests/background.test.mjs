@@ -845,7 +845,10 @@ test("start relay binds the run request to the selected tab id", async () => {
   await invokeRuntimeMessage({
     type: "AIPM_RELAY_TO_CHATGPT",
     targetTabId: 88,
-    payload: { type: "AIPM_START", workflow: { id: "w" }, keepAwake: true }
+    payload: {
+      type: "AIPM_START", workflow: { id: "w" }, keepAwake: true,
+      expectedConversationKey: "chatgpt:c:tab-88", expectedDocumentInstanceId: "instance-88"
+    }
   });
   const sent = tabMessages.at(-1);
   assert.equal(sent.tabId, 88);
@@ -3312,7 +3315,10 @@ test("Overnight C4: ambiguous Start delivery is never retried or falsely reporte
   const response = await invokeRuntimeMessage({
     type: "AIPM_RELAY_TO_CHATGPT",
     targetTabId: 113,
-    payload: { type: "AIPM_START", workflow: { id: "ambiguous" } }
+    payload: {
+      type: "AIPM_START", workflow: { id: "ambiguous" },
+      expectedConversationKey: "chatgpt:c:tab-113", expectedDocumentInstanceId: "instance-113"
+    }
   });
 
   assert.equal(response.ok, false);
