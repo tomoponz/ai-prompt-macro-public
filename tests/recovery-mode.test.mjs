@@ -10,6 +10,7 @@ import {
   createWorkflowHarness,
   threePromptWorkflow
 } from "./helpers/workflow-harness.mjs";
+import { deferred, installBackgroundHarness } from "./helpers/background-harness.mjs";
 
 test("SAFE is immutable baseline while completion settings are hard bounded", () => {
   assert.deepEqual(normalizeRecoveryPolicy(), {
@@ -136,15 +137,59 @@ test("COMPLETION-ORIENTED keeps durable Stop terminal with zero later Sends", as
   assert.equal(harness.page.clicks, 1, "Stop remains terminal despite the longer readiness policy");
 });
 
-test("production source never turns recovery into mutation retry or permission expansion", () => {
+for (const mode of ["safe", "completion"]) {
+  test(`${mode} recovery dispatches Start once and never retries a timed-out command`, async (t) => {
+    const previousChrome = globalThis.chrome;
+    const background = await installBackgroundHarness();
+    const tabId = mode === "safe" ? 81 : 82;
+    const delivered = deferred();
+    const reply = deferred();
+    const timers = new Map();
+    const realSetTimeout = globalThis.setTimeout;
+    const realClearTimeout = globalThis.clearTimeout;
+    t.mock.method(globalThis, "setTimeout", (callback, ms, ...args) => {
+      if (ms !== 1500) return realSetTimeout(callback, ms, ...args);
+      const token = {};
+      timers.set(token, () => callback(...args));
+      return token;
+    });
+    t.mock.method(globalThis, "clearTimeout", (token) => {
+      if (!timers.delete(token)) realClearTimeout(token);
+    });
+    background.setCommandResponder(tabId, () => {
+      delivered.resolve();
+      return reply.promise;
+    });
+    try {
+      const pending = background.relay({
+        type: "AIPM_START", expectedConversationKey: "chatgpt:c:torture",
+        expectedDocumentInstanceId: `instance-${tabId}`,
+        readOnlyRecovery: { mode, identityAttempts: 10, statusRecovery: "persistent" }
+      }, tabId);
+      await delivered.promise;
+      assert.equal(background.commandsDelivered(tabId).length, 1);
+      assert.equal(timers.size, 1, "only the actual command-delivery deadline is outstanding");
+      [...timers.values()][0]();
+      const response = await pending;
+      assert.equal(response.ok, false);
+      assert.equal(response.relayErrorCode, "COMMAND_DELIVERY_TIMEOUT");
+      assert.equal(response.startDeliveryState, "attempted");
+      assert.equal(background.commandsDelivered(tabId).length, 1, "timeout cannot retry a mutation");
+      reply.resolve({ ok: true });
+      await new Promise((resolve) => realSetTimeout(resolve, 0));
+      assert.equal(background.commandsDelivered(tabId).length, 1, "a late reply cannot trigger another delivery");
+    } finally {
+      reply.resolve({ ok: true });
+      globalThis.chrome = previousChrome;
+    }
+  });
+}
+
+test("production recovery retains its ambiguity fence and existing permission scope", () => {
   const background = fs.readFileSync(new URL("../src/background.js", import.meta.url), "utf8");
   const runner = fs.readFileSync(new URL("../src/content-runner.js", import.meta.url), "utf8");
   const manifest = JSON.parse(fs.readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 
-  assert.match(
-    background,
-    /const response = await withTimeout\(\s*\(\) => chrome\.tabs\.sendMessage\(tab\.id, deliveredPayload, deliveryTarget\)/
-  );
   assert.doesNotMatch(background, /retryExistingReceiver\(tab\.id, deliveredPayload/);
   assert.match(runner, /throw makeError\("submission_ambiguous"\)/);
   assert.match(runner, /readinessTimeoutForRun\(run\)/);

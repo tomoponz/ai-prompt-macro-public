@@ -287,6 +287,39 @@ for (const [label, prompt] of [
   });
 }
 
+// This models a handled paste that remains text. It proves complete input delivery,
+// not ChatGPT's conversion threshold or the contents of a generated attachment.
+for (const [label, prompt] of [
+  ["reported 80,640-character input", "test".repeat(20_160)],
+  ["large Unicode and escaped markup", "  日本語 👩🏽‍💻 e\u0301 𝄞 <p>&\"'\r\n\r\n".repeat(2_600)]
+]) {
+  test(`ProseMirror writer preserves complete ${label} in one handled paste`, () => {
+    const harness = createComposerHarness();
+    const transaction = harness.writePrompt(prompt);
+    const expected = prompt.replace(/\r\n?/g, "\n");
+    assert.ok(Buffer.byteLength(prompt, "utf8") > 80_000);
+    assert.equal(harness.events.length, 1);
+    assert.equal(harness.events[0].clipboardData.getData("text/plain"), expected);
+    assert.equal(harness.state(), expected);
+    assert.equal(harness.adapter.getComposerText(harness.composer), expected);
+    assert.equal(harness.adapter.inspectPromptDelivery(transaction, prompt, harness.deliveryBinding).mode, "text");
+    assert.equal(harness.clicks(), 0, "the writer never sends or splits input into messages");
+    harness.adapter.finishPromptDelivery(transaction);
+    assert.ok(harness.observers.every((observer) => !observer.connected));
+  });
+}
+
+test("an unhandled 80,640-character paste is not retried or silently shortened", () => {
+  const harness = createComposerHarness("", { handlePaste: false });
+  const prompt = "test".repeat(20_160);
+  assert.throws(() => harness.writePrompt(prompt), (error) => error.code === "composer_verification_failed");
+  assert.equal(harness.events.length, 1);
+  assert.equal(harness.events[0].clipboardData.getData("text/plain"), prompt);
+  assert.equal(harness.state(), "");
+  assert.equal(harness.clicks(), 0);
+  assert.ok(harness.observers.every((observer) => !observer.connected));
+});
+
 for (const residue of ["\n", "\n\n", "\u200b", "\u00a0", "\u200c\n\u2060\ufeff"]) {
   test(`PDT1/PDT2/PDT5: ProseMirror overwrites only allowed structural residue ${JSON.stringify(residue)}`, () => {
     const harness = createComposerHarness(residue);

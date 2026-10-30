@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -96,7 +97,7 @@ function newRun(workflow, conversationKey, suffix) {
     provider: "chatgpt",
     conversationKey,
     executionSessionId: `session-${suffix}`,
-    contentVersion: "0.4.2",
+    contentVersion: CURRENT_EXTENSION_VERSION,
     status: "running",
     phase: "ready",
     resumable: true,

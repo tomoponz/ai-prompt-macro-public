@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./helpers/extension-version.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { installSidePanelHarness, deferred, tick } from "./helpers/sidepanel-harness.mjs";
@@ -76,6 +77,9 @@ test(`F5 C/D: production timeout, null observation, then original Start ${lateOu
       }
       return response;
     });
+    // Start now carries the target observation shown to the user. Establish the
+    // real content conversation/instance before testing uncertain delivery.
+    await panel.click("refreshTabs");
     // Explicitly fire the production relay's timer only after delivery. No real
     // timeout, random scheduling, network or ChatGPT page is involved.
     const timers = new Map();
@@ -148,7 +152,7 @@ test(`F5 C/D: production timeout, null observation, then original Start ${lateOu
 function status(tabId, run = null) {
   return {
     ok: true, pageReady: true, generationState: "idle", blocker: null,
-    provider: "chatgpt", contentVersion: "0.4.2", instanceId: `instance-${tabId}`,
+    provider: "chatgpt", contentVersion: CURRENT_EXTENSION_VERSION, instanceId: `instance-${tabId}`,
     conversationKey: `chatgpt:c:tab-${tabId}`, run, diagnostics: []
   };
 }

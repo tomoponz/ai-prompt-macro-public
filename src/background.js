@@ -2,6 +2,7 @@ import { createReadOnlyBackpressure } from "./read-only-backpressure.js";
 import { recoveryRuntimeBounds } from "./recovery-policy.js";
 import { preflightWorkflowStartSchedule } from "./workflow.js";
 import { normalizeTargetTitle } from "./target-display.js";
+import { isCanonicalConversationKey, START_CONVERSATION_REQUIRED_MESSAGE } from "./target-selection.js";
 
 const ALARM_PREFIX = "aipm.wait.";
 const SCHEDULES_KEY = "aipm.schedules.v1";
@@ -717,11 +718,30 @@ function isNewChatConfirmationPending(run, currentConversationKey) {
     String(currentConversationKey).startsWith("chatgpt:c:");
 }
 
+async function hasSubmittedNewChatCheckpoint(run) {
+  if (run?.status !== "paused" || run.phase !== "new-chat-confirmation-required" ||
+      run.pauseReason !== "new-chat-confirmation-required" || run.outbox?.state !== "submitted" ||
+      typeof run.outbox.id !== "string" || !run.outbox.id) return false;
+  const cursor = run.cursor;
+  const position = run.outbox.position;
+  for (const field of ["stepIndex", "repeatIndex", "sendsCompleted"]) {
+    if (!Number.isInteger(cursor?.[field]) || cursor[field] < 0 ||
+        cursor[field] !== position?.[field]) return false;
+  }
+  const step = run.workflow?.steps?.[cursor.stepIndex];
+  if (step?.type !== "prompt" || step.delivery !== "send" || typeof step.prompt !== "string" ||
+      step.id !== run.outbox.stepId || !Number.isInteger(step.repeat) ||
+      cursor.repeatIndex >= step.repeat) return false;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(step.prompt));
+  const hash = [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  return run.outbox.promptHash === hash;
+}
+
 async function confirmNewChatTargetForTab(tabId, message, sender) {
   const invalid = await validateSessionBoundMessage(message);
   if (invalid) return invalid;
   const targetKey = message?.conversationKey;
-  if (typeof targetKey !== "string" || !targetKey.startsWith("chatgpt:c:")) {
+  if (!isCanonicalConversationKey(targetKey)) {
     return { ok: false, error: "Resume先のcanonical conversationを確認できません。" };
   }
   if (typeof message?.expectedRunId !== "string" || !message.expectedRunId) {
@@ -758,8 +778,26 @@ async function confirmNewChatTargetForTab(tabId, message, sender) {
     const key = activeRunKey(tabId);
     const stored = await chrome.storage.local.get(key);
     const run = stored[key];
-    if (!run || run.runId !== message.expectedRunId || !isNewChatConfirmationPending(run, targetKey)) {
+    const sameCanonicalTarget = run?.conversationKey === targetKey;
+    if (!run || run.runId !== message.expectedRunId ||
+        run.executionSessionId !== message.executionSessionId || run.boundTabId !== tabId ||
+        (!isNewChatConfirmationPending(run, targetKey) && !sameCanonicalTarget)) {
       return { ok: false, error: "confirmation-required Runが一致しません。" };
+    }
+    if (stateRevisionToken(message.expectedStateRevision) === null ||
+        stateRevisionToken(message.expectedStateRevision) !== stateRevisionToken(run.stateRevision)) {
+      return { ok: false, errorCode: "RUN_STATE_CONFLICT", error: "確認対象のRun状態が変わりました。状態を更新してからResumeしてください。" };
+    }
+    if (sameCanonicalTarget && (typeof sender?.documentId !== "string" ||
+        run.boundDocumentId !== sender.documentId ||
+        run.documentInstanceId !== message.documentInstanceId)) {
+      return { ok: false, errorCode: "DOCUMENT_IDENTITY_MISMATCH", error: "確認済みの会話と文書が一致しません。" };
+    }
+    if (!(await hasSubmittedNewChatCheckpoint(run))) {
+      return { ok: false, error: "初回送信の確認待ち位置を安全に照合できません。" };
+    }
+    if (executionSessionGeneration !== requestExecutionGeneration || stopIntentMatches(tabId, run.runId)) {
+      return { ok: false, errorCode: "RUN_STATE_CONFLICT", error: "停止要求またはセッション変更後のResumeを拒否しました。" };
     }
     const adopted = {
       ...run,
@@ -779,6 +817,11 @@ async function confirmNewChatTargetForTab(tabId, message, sender) {
         error: "document authorityが失効したためResume先の採用を拒否しました。"
       }, identity);
     }
+    // Adoption and progress are separate durable writes. If the first committed
+    // but the reply or the following progress save failed, an explicit retry may
+    // reuse this exact paused checkpoint. Do not move its revision or cursor;
+    // the subsequent Resume save still has to win the existing revision CAS.
+    if (sameCanonicalTarget) return { ok: true, run };
     await chrome.storage.local.set({ [key]: adopted });
     return { ok: true, run: adopted };
   });
@@ -2099,6 +2142,16 @@ async function setRunForTab(
   if (Number.isInteger(run.boundTabId) && run.boundTabId !== tabId) {
     return { ok: false, error: "Runの対象タブが一致しません。" };
   }
+  // New Runs begin only after the user has established a conversation. Legacy
+  // paused New Chat confirmation uses the separate resume transition unchanged.
+  if (runTransition === "start") {
+    if (!isCanonicalConversationKey(run.conversationKey) || !isCanonicalConversationKey(currentConversationKey)) {
+      return { ok: false, errorCode: "START_CONVERSATION_REQUIRED", error: START_CONVERSATION_REQUIRED_MESSAGE };
+    }
+    if (run.conversationKey !== currentConversationKey) {
+      return { ok: false, errorCode: "STALE_START_TARGET", error: "開始対象の会話が変わりました。状態を更新してから開始してください。" };
+    }
+  }
   const key = activeRunKey(tabId);
   const identity = await reconfirmContentDocument(
     tabId,
@@ -2978,7 +3031,7 @@ async function connectToChatGpt(tabId, { freshAuthority = false, recovery = null
   }
 }
 
-async function relayToChatGpt(payload, targetTabId = null) {
+async function relayToChatGpt(payload, targetTabId = null, markCommandAttempted = null) {
   if (!payload || typeof payload !== "object") {
     return { ok: false, relayError: "送信内容が不正です。" };
   }
@@ -3024,6 +3077,21 @@ async function relayToChatGpt(payload, targetTabId = null) {
     return connection;
   }
   if (payload.type === "AIPM_GET_STATUS") return connection.response;
+
+  if (payload.type === "AIPM_START") {
+    if (!isCanonicalConversationKey(payload.expectedConversationKey) ||
+        !isCanonicalConversationKey(connection.response.conversationKey)) {
+      return connectionFailure(START_CONVERSATION_REQUIRED_MESSAGE, "START_CONVERSATION_REQUIRED");
+    }
+    if (payload.expectedConversationKey !== connection.response.conversationKey ||
+        typeof payload.expectedDocumentInstanceId !== "string" || !payload.expectedDocumentInstanceId ||
+        payload.expectedDocumentInstanceId !== connection.response.instanceId) {
+      return connectionFailure(
+        "開始対象の会話またはページがクリック後に変わりました。状態を更新してから開始してください。",
+        "STALE_START_TARGET"
+      );
+    }
+  }
 
   const runControl = ["AIPM_PAUSE", "AIPM_RESUME", "AIPM_STOP"].includes(payload.type);
   if (runControl && !durableStop) {
@@ -3135,7 +3203,12 @@ async function relayToChatGpt(payload, targetTabId = null) {
 
   try {
     const response = await withTimeout(
-      () => chrome.tabs.sendMessage(tab.id, deliveredPayload, deliveryTarget),
+      () => {
+        // Entering the API call is the conservative delivery boundary. A throw or
+        // lost reply after this point cannot prove that the command did not run.
+        markCommandAttempted?.();
+        return chrome.tabs.sendMessage(tab.id, deliveredPayload, deliveryTarget);
+      },
       API_TIMEOUT_MS,
       { code: "COMMAND_DELIVERY_TIMEOUT", phase: "command-delivery", tabId: tab.id }
     );
@@ -3170,6 +3243,23 @@ async function relayToChatGpt(payload, targetTabId = null) {
   }
 }
 
+async function relayStartToChatGpt(payload, targetTabId) {
+  let commandAttempted = false;
+  let response;
+  try {
+    response = await relayToChatGpt(payload, targetTabId, () => { commandAttempted = true; });
+  } catch (error) {
+    response = messageFailureResponse(error);
+  }
+  // This evidence belongs to the background's dispatch path, never to a content
+  // reply or an error-code allowlist. Overwrite any similarly named reply field.
+  // A malformed post-dispatch reply stays malformed and therefore unresolved.
+  return {
+    ...(response && typeof response === "object" ? response : {}),
+    startDeliveryState: commandAttempted ? "attempted" : "not-dispatched"
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const supported = new Set([
     "AIPM_ARM_ALARM",
@@ -3192,7 +3282,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     await ensureLifecycleReady();
     if (message.type === "AIPM_RELAY_TO_CHATGPT") {
-      return relayToChatGpt(message.payload, Number.isInteger(message.targetTabId) ? message.targetTabId : null);
+      const targetTabId = Number.isInteger(message.targetTabId) ? message.targetTabId : null;
+      return message.payload?.type === "AIPM_START"
+        ? relayStartToChatGpt(message.payload, targetTabId)
+        : relayToChatGpt(message.payload, targetTabId);
     }
     if (message.type === "AIPM_LIST_CHATGPT_TABS") return listChatGptTabs();
     if (message.type === "AIPM_HAS_ACTIVE_RUNS") return hasActiveRuns();

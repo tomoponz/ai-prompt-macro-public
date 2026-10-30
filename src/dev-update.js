@@ -3,7 +3,10 @@ const reloadButton = document.querySelector("#reloadExtension");
 const reloadMessage = document.querySelector("#reloadExtensionMessage");
 let reloadCheckInFlight = false;
 
-if (version) version.textContent = chrome.runtime.getManifest().version;
+if (version) {
+  const manifest = chrome.runtime.getManifest();
+  version.textContent = manifest.version_name || manifest.version;
+}
 
 reloadButton?.addEventListener("click", async () => {
   if (reloadCheckInFlight) return;

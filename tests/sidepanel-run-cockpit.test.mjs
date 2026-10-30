@@ -284,7 +284,8 @@ test("production presentation expands active, confirmation and fail-closed state
         assert.match(harness.el("message").textContent, /自動再送しません/);
       }
     }
-    harness.setRelayResponder(() => ({ ok: true, pageReady: true, run: null }));
+    harness.setRelayResponder(() => ({ ok: true, pageReady: true, run: null,
+      conversationKey: "chatgpt:c:tab-1", instanceId: "instance-1" }));
     await harness.click("refreshTabs");
     assert.equal(harness.el("runCard").dataset.promoted, "false");
     assert.equal(harness.el("runDetails").hidden, true);

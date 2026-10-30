@@ -1,3 +1,5 @@
+// Production runner/controller with a modeled adapter and clock. These cases
+// verify lifecycle behavior; production-core DOM recognition has separate tests.
 import test from "node:test";
 import assert from "node:assert/strict";
 
@@ -30,16 +32,29 @@ async function run(options = {}, repeat = 1) {
   return { harness, response };
 }
 
-test("C10 R3 RED: attachment conversion after 350ms settles as paste-attachment", async () => {
+function assertScopedAttachmentCompleted(harness, repeat = 1) {
+  const saved = harness.stored();
+  assert.equal(harness.page.clicks, repeat);
+  assert.equal(saved.status, "completed");
+  assert.equal(saved.lastErrorCode, null);
+  assert.equal(saved.outbox, null);
+  assert.equal(saved.cursor.sendsCompleted, repeat);
+  assert.equal(saved.workflow.steps[0].repeat, repeat);
+  assert.equal(harness.page.attachmentCount, 0);
+  assert.equal(harness.page.activeDeliveryTransactions, 0);
+  assert.equal(harness.transcript.filter((entry) => entry.type === "write").length, repeat);
+  assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, repeat);
+  assert.equal(harness.saves().some((entry) => entry.outbox?.deliveryMode === "paste-attachment"), true);
+}
+
+test("C10 R3: scoped attachment conversion after 350ms sends exactly once", async () => {
   const { harness } = await run({
     pasteAttachmentTimeline: [{ afterMs: 350, type: "convert" }]
   });
-  assert.equal(harness.page.clicks, 1);
-  assert.equal(harness.saves().some((saved) => saved.outbox?.deliveryMode === "paste-attachment"), true);
-  assert.equal(harness.stored().status, "completed");
+  assertScopedAttachmentCompleted(harness);
 });
 
-test("C10 R4 RED: one bounded temporary-to-final replacement preserves provenance", async () => {
+test("C10 R4: temporary-to-final tile replacement preserves scoped logical ownership", async () => {
   const { harness } = await run({
     pasteAttachmentTimeline: [
       { afterMs: 300, type: "convert" },
@@ -47,9 +62,7 @@ test("C10 R4 RED: one bounded temporary-to-final replacement preserves provenanc
     ]
   });
   assert.equal(harness.page.attachmentReplacementCount, 1);
-  assert.equal(harness.page.clicks, 1);
-  assert.equal(harness.saves().some((saved) => saved.outbox?.deliveryMode === "paste-attachment"), true);
-  assert.equal(harness.stored().status, "completed");
+  assertScopedAttachmentCompleted(harness);
 });
 
 test("C10 R5: a second attachment during settlement sends zero", async () => {
@@ -63,13 +76,14 @@ test("C10 R5: a second attachment during settlement sends zero", async () => {
   assert.equal(harness.stored().resumable, false);
 });
 
-test("C10 R6 RED: initial exact text does not cause premature TEXT settlement", async () => {
+test("C10 R6: initial text can settle as a scoped attachment before mode lock", async () => {
   const { harness } = await run({
     pasteAttachmentTimeline: [{ afterMs: 350, type: "convert" }]
   });
   const deliveryModes = harness.saves().map((saved) => saved.outbox?.deliveryMode).filter(Boolean);
   assert.equal(deliveryModes.includes("text"), false);
   assert.equal(deliveryModes.includes("paste-attachment"), true);
+  assertScopedAttachmentCompleted(harness);
 });
 
 test("C10 R7: empty composer with no attachment times out fail-closed", async () => {
@@ -106,25 +120,27 @@ test("C10 R10: assistant-history attachment state is never consulted", async () 
   await harness.ready();
   await harness.start(workflow());
   await harness.settle();
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
   assert.equal(harness.adapterCalls.has("readAssistantAttachment"), false);
 });
 
 for (const repeat of [5, 20, 40]) {
-  test(`C10 delayed/replaced attachment Repeat=${repeat} completes exactly`, async () => {
+  test(`C10 delayed/replaced attachment Repeat=${repeat} completes each position once`, async () => {
     const { harness } = await run({
       pasteAttachmentTimeline: [
         { afterMs: 300, type: "convert" },
         { afterMs: 420, type: "replace" }
       ]
     }, repeat);
-    assert.equal(harness.page.clicks, repeat);
-    assert.equal(new Set(harness.clicks().map((entry) => entry.position)).size, repeat);
-    assert.equal(harness.stored().status, "completed");
+    assert.equal(harness.page.attachmentReplacementCount, repeat);
+    assertScopedAttachmentCompleted(harness, repeat);
+    assert.equal((await harness.control("AIPM_RESUME")).ok, false);
+    await harness.settle();
+    assertScopedAttachmentCompleted(harness, repeat);
   });
 }
 
-test("C10 C8 recovered identity keeps delayed attachment exactly once", async () => {
+test("C10 C8 recovered identity preserves a scoped delayed attachment transaction", async () => {
   let recovered = false;
   const { harness } = await run({
     pasteAttachmentTimeline: [{ afterMs: 350, type: "convert" }],
@@ -151,7 +167,7 @@ test("C10 C8 recovered identity keeps delayed attachment exactly once", async ()
     }
   });
   assert.equal(recovered, true);
-  assert.equal(harness.page.clicks, 1);
+  assertScopedAttachmentCompleted(harness);
 });
 
 test("C10 C8 identity mismatch during settlement sends zero", async () => {

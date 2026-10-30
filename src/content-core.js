@@ -1,6 +1,6 @@
 "use strict";
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.2", ready: false };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.3", ready: false };
 
 var SCHEMA_VERSION = 1;
 var DIAGNOSTICS_KEY = "aipm.diagnostics.v1";
@@ -44,6 +44,9 @@ if (typeof promptTextOwnershipLifetimes !== "undefined") {
 }
 var promptTextOwnershipLifetimes = new Set();
 var pausedPromptTextReceipts = new WeakMap();
+// Initial composer contents are authorized by one Start, never reconstructed from
+// storage. Reinjection drops these capabilities together with paused input authority.
+var promptAppendPlans = new WeakMap();
 
 var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 var nowIso = () => new Date().toISOString();
@@ -161,6 +164,82 @@ function writeProseMirrorPrompt(composer, text) {
   dispatchProseMirrorPaste(composer, normalizeComposerComparableText(text));
 }
 
+function appendProseMirrorPrompt(composer, text) {
+  const selection = window.getSelection?.();
+  if (!selection) throw makeError("composer_verification_failed");
+  const range = document.createRange();
+  range.selectNodeContents(composer);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+  dispatchProseMirrorPaste(composer, normalizeComposerComparableText(text));
+}
+
+// These snapshots describe only the user-authorized composer, stay in memory, and
+// are never diagnostics. Preserve arbitrary editor nodes rather than recognizing a
+// list of plugin names. The bounds avoid recursively traversing an unbounded tree.
+function snapshotComposerTree(composer) {
+  let remaining = 20_000;
+  const visit = (node, depth) => {
+    if (!node || --remaining < 0 || depth > 64) throw makeError("composer_verification_failed");
+    if (node.nodeType === Node.TEXT_NODE) return { text: String(node.nodeValue ?? "") };
+    const attributes = Array.from(depth === 0 ? [] : (node.attributes ?? [])).map((attr) => [String(attr.name), String(attr.value)])
+      .sort(([left], [right]) => left.localeCompare(right));
+    return {
+      tag: String(node.tagName ?? ""),
+      attributes,
+      children: Array.from(node.childNodes ?? node.children ?? []).map((child) => visit(child, depth + 1))
+    };
+  };
+  return visit(composer, 0);
+}
+
+function sameComposerTree(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function composerNodeIdentity(composer) {
+  const nodes = [];
+  const visit = (node, depth) => {
+    if (!node || nodes.length >= 20_000 || depth > 64) throw makeError("composer_verification_failed");
+    nodes.push(node);
+    for (const child of node.childNodes ?? node.children ?? []) visit(child, depth + 1);
+  };
+  visit(composer, 0);
+  return nodes;
+}
+
+function sameComposerNodeIdentity(before, composer) {
+  const after = composerNodeIdentity(composer);
+  return before.length === after.length && before.every((node, index) => node === after[index]);
+}
+
+function composerTreeRetainsPrefix(before, after) {
+  if (!before || !after) return false;
+  if (Object.prototype.hasOwnProperty.call(before, "text")) {
+    return typeof after.text === "string" && after.text.startsWith(before.text);
+  }
+  if (before.tag !== after.tag || !sameComposerTree(before.attributes, after.attributes)) return false;
+  // Atomic/noneditable nodes retain their whole structure, even when they expose
+  // no plain text. Their identity is not reduced to a guessed plugin label.
+  if (before.attributes.some(([name, value]) => name === "contenteditable" && value === "false")) {
+    return sameComposerTree(before, after);
+  }
+  const children = before.children.filter((child) => !(child.tag === "BR" &&
+    child.attributes.some(([name, value]) => name === "class" && value.split(/\s+/).includes("ProseMirror-trailingBreak"))));
+  const actual = after.children.filter((child) => !(child.tag === "BR" &&
+    child.attributes.some(([name, value]) => name === "class" && value.split(/\s+/).includes("ProseMirror-trailingBreak"))));
+  if (actual.length < children.length) return false;
+  return children.every((child, index) => index === children.length - 1
+    ? composerTreeRetainsPrefix(child, actual[index])
+    : sameComposerTree(child, actual[index]));
+}
+
+function hasStructuredComposerInput(snapshot) {
+  return (snapshot?.children ?? []).some((child) => typeof child.text !== "string" &&
+    (!["P", "BR"].includes(child.tag) || hasStructuredComposerInput(child)));
+}
+
 function isVisible(element) {
   if (!(element instanceof Element)) return false;
   const style = getComputedStyle(element);
@@ -226,6 +305,13 @@ var MAX_DERIVED_REMOVE_ARIA_LENGTH = 80;
 var MAX_COMPOSER_SURFACE_ANCESTOR_DEPTH = 6;
 var MAX_ATTACHMENT_SIGNATURE_ANCESTOR_DEPTH = 8;
 var MAX_ATTACHMENT_CONTAINER_ANCESTOR_DEPTH = 4;
+// The current composer has a deep form layout, but the attachment relationship is
+// local: card -> attachment region -> composer body. Do not relax the old file-tile
+// depth limit or use arbitrary resource cards elsewhere on the page as authority.
+var MAX_RESOURCE_CARD_REGION_DEPTH = 4;
+var MAX_RESOURCE_REGION_BODY_DEPTH = 4;
+var MAX_RESOURCE_REGION_ELEMENTS = 1_024;
+var RESOURCE_CARD_REMOVE_LABEL = "貼り付けたテキストの添付を削除";
 var MAX_PROMPT_DELIVERY_MUTATIONS = 1_024;
 var MAX_PROMPT_DELIVERY_REPLACEMENTS = 4;
 var PROMPT_DELIVERY_SETTLEMENT_MAX_MS = 30_000;
@@ -404,6 +490,119 @@ function findDerivedFileTileRemoveControl(root, composerSurface) {
   return result.accepted ? result.removeControl : null;
 }
 
+function currentResourceCardContext(card, composer, composerSurface) {
+  if (!card?.matches?.("span") ||
+      !card.classList?.contains?.("composer-attachment-surface") ||
+      !card.classList?.contains?.("group/resource-card")) return null;
+  const form = composer?.closest?.("form");
+  const body = composer?.closest?.("[data-composer-body]");
+  const region = card.closest?.("[data-composer-attachments]");
+  if (!form || form.getAttribute?.("data-chatgpt-composer") === null ||
+      !body || !region || !composerSurface?.contains?.(card) ||
+      card.closest?.("form") !== form || region.closest?.("form") !== form ||
+      body.closest?.("form") !== form || region.closest?.("[data-composer-body]") !== body ||
+      !composerSurface.contains(region)) return null;
+  const cardDepth = boundedAncestorDepth(card, region, MAX_RESOURCE_CARD_REGION_DEPTH);
+  const regionDepth = boundedAncestorDepth(region, body, MAX_RESOURCE_REGION_BODY_DEPTH);
+  if (cardDepth < 1 || regionDepth < 1) return null;
+  const buttons = card.querySelectorAll("button");
+  if (buttons.length > MAX_DERIVED_FILE_TILE_BUTTON_CANDIDATES) return null;
+  // The observed overlay's accessible label is user text, not an action name.
+  // Identify that control structurally before evaluating any remove selectors.
+  const previews = [...buttons].filter((button) => button.parentElement === card &&
+    button.classList?.contains?.("peer/resource-card"));
+  if (previews.length > 1) return null;
+  const previewControl = previews[0] ?? null;
+  // Read only the exact remove action's attribute. Preview labels and card text
+  // can contain the user's prompt and are never inspected for classification.
+  const removeControls = [...card.querySelectorAll(`button[aria-label='${RESOURCE_CARD_REMOVE_LABEL}']`)]
+    .filter((button) => button !== previewControl);
+  if (removeControls.length !== 1) return null;
+  const removeControl = removeControls[0];
+  // Mixed old/new controls must not collapse into one authorized attachment just
+  // because DOM containment deduplicates their card. Require one recognized action.
+  if ([...buttons].some((button) => button !== removeControl && button !== previewControl &&
+      hasRemoveSemantics(button))) return null;
+  if (removeControl.closest?.(".composer-attachment-surface") !== card) return null;
+  return { card, region, body, form, removeControl, cardDepth, regionDepth };
+}
+
+function inspectCurrentResourceCards(composer, composerSurface) {
+  const result = { known: true, cards: [], regions: [], hidden: new Set(), inspected: new Set() };
+  const form = composer?.closest?.("form");
+  if (!form) return result;
+  // A legacy marked surface can be narrower than this form. Observe its sibling
+  // attachment mounts only to reject unknown residue; card context still requires
+  // the chosen surface to contain the card, so this never broadens send authority.
+  const regions = [...form.querySelectorAll("[data-composer-attachments]")]
+    .filter((region) => region.closest?.("form") === form);
+  const allCards = [...form.querySelectorAll(".composer-attachment-surface")]
+    .filter((card) => card.closest?.("form") === form);
+  if (regions.length + allCards.length > MAX_COMPOSER_ATTACHMENT_CANDIDATES) {
+    result.known = false;
+    return result;
+  }
+  const handledCards = new Set();
+  for (const region of regions) {
+    const cards = allCards.filter((card) => card.closest?.("[data-composer-attachments]") === region);
+    // An empty, hidden attachment mount is normal. A populated unknown region is
+    // not evidence of absence. Defer coverage until legacy recognizers have also
+    // accounted for their tiles; moving one into this mount must not invalidate it.
+    if ((region.childNodes?.length ?? region.children?.length ?? 0) > 0) {
+      const body = composer.closest?.("[data-composer-body]");
+      const regionDepth = body ? boundedAncestorDepth(region, body, MAX_RESOURCE_REGION_BODY_DEPTH) : -1;
+      if (!body || regionDepth < 1 || region.closest?.("[data-composer-body]") !== body ||
+          body.closest?.("form") !== form) {
+        result.known = false;
+      }
+      if (!isVisible(region)) {
+        result.known = false;
+        result.hidden.add(region);
+      }
+      result.regions.push(region);
+    }
+    for (const card of cards) {
+      handledCards.add(card);
+      result.inspected.add(card);
+      const context = currentResourceCardContext(card, composer, composerSurface);
+      if (!context) {
+        result.known = false;
+        if (!isVisible(card) || !isVisible(region)) result.hidden.add(card);
+        continue;
+      }
+      if (!isVisible(card) || !isVisible(region) || !isVisible(context.removeControl)) {
+        result.known = false;
+        result.hidden.add(card);
+        continue;
+      }
+      result.cards.push(card);
+    }
+  }
+  for (const card of allCards) {
+    if (handledCards.has(card)) continue;
+    result.inspected.add(card);
+    result.known = false;
+    if (!isVisible(card)) result.hidden.add(card);
+  }
+  return result;
+}
+
+function resourceRegionsAreAccountedFor(regions, logicalNodes) {
+  for (const region of regions) {
+    const attachments = logicalNodes.filter((node) => region.contains(node));
+    if (attachments.length === 0) return false;
+    const elements = region.querySelectorAll("*");
+    if (elements.length > MAX_RESOURCE_REGION_ELEMENTS) return false;
+    for (const node of elements) {
+      // Account for both the current resource card and already recognized legacy
+      // tiles, never arbitrary sibling upload/error branches or their contents.
+      if (!attachments.some((attachment) => attachment === node ||
+          attachment.contains(node) || node.contains(attachment))) return false;
+    }
+  }
+  return true;
+}
+
 function attachmentContainerForSurface(target, composerSurface) {
   const selector = COMPOSER_ATTACHMENT_CONTAINER_SELECTORS.join(",");
   const explicit = target?.matches?.(selector) ? target : target?.closest?.(selector);
@@ -425,25 +624,35 @@ function getScopedComposerAttachmentState(composer) {
   const composerSurface = surfaceState?.node;
   if (!composerSurface) return { known: false, count: 0, logicalNodes: [], hiddenCount: 0 };
 
-  const visibleContainers = new Set();
+  const resourceCards = inspectCurrentResourceCards(composer, composerSurface);
+  const visibleContainers = new Set(resourceCards.cards);
   const visibleUnownedRemoveButtons = new Set();
-  const hiddenCandidates = new Set();
-  const inspectedNodes = new Set();
-  let inspectedCandidates = 0;
+  const hiddenCandidates = new Set(resourceCards.hidden);
+  const inspectedNodes = new Set(resourceCards.inspected);
+  const accountedNodes = new Set(resourceCards.cards);
+  const unclassifiedGenericCandidates = new Set();
+  let inspectedCandidates = inspectedNodes.size;
   let fileTileFallbackSeen = false;
   let fileTileFallbackCount = 0;
   let derivedRemoveSemanticCount = 0;
   let fallbackAccepted = false;
   let fallbackRejectReason = "no-file-tile";
   const inspectCandidate = (node, requireRemoveControl = false) => {
-      if (inspectedNodes.has(node)) return true;
-      inspectedNodes.add(node);
-      inspectedCandidates += 1;
-      if (inspectedCandidates > MAX_COMPOSER_ATTACHMENT_CANDIDATES) {
-        return false;
+      if (accountedNodes.has(node)) return true;
+      if (!inspectedNodes.has(node)) {
+        inspectedNodes.add(node);
+        inspectedCandidates += 1;
+        if (inspectedCandidates > MAX_COMPOSER_ATTACHMENT_CANDIDATES) return false;
       }
       const container = attachmentContainerForSurface(node, composerSurface);
-      if (requireRemoveControl && (!container || !findRemoveControl(container))) return true;
+      if (requireRemoveControl && (!container || !findRemoveControl(container))) {
+        unclassifiedGenericCandidates.add(node);
+        return true;
+      }
+      // A generic-testid check can lack an explicit remove control while the
+      // historical live-tile fallback recognizes its derived remove semantic.
+      // Keep the unique-node budget, but only deduplicate accounted candidates.
+      accountedNodes.add(node);
       if (isVisible(node)) {
         if (container && isVisible(container)) visibleContainers.add(container);
         else visibleUnownedRemoveButtons.add(node);
@@ -526,6 +735,14 @@ function getScopedComposerAttachmentState(composer) {
   const logicalNodes = [...logicalContainers, ...visibleUnownedRemoveButtons].filter((candidate, index, all) =>
     !all.some((other, otherIndex) => otherIndex !== index && other.contains?.(candidate))
   );
+  // A file-shaped candidate rejected by one recognizer is not evidence that the
+  // composer has no attachments. A later recognizer may account for the same tile
+  // (including a wrapper/child), but otherwise keep the surface unknown. This also
+  // guards the next ordinary-text send against a residual, partially recognized tile.
+  const unresolvedGenericCandidate = [...unclassifiedGenericCandidates].some((node) =>
+    !accountedNodes.has(node) && !logicalNodes.some((logical) =>
+      logical === node || logical.contains?.(node) || node.contains?.(logical))
+  );
   const attachmentHeaders = new Set();
   for (const logicalNode of logicalNodes) {
     let current = logicalNode;
@@ -543,7 +760,8 @@ function getScopedComposerAttachmentState(composer) {
     }
   }
   return {
-    known: true,
+    known: resourceCards.known && !unresolvedGenericCandidate &&
+      resourceRegionsAreAccountedFor(resourceCards.regions, logicalNodes),
     count: logicalNodes.length,
     logicalNodes,
     hiddenCount: hiddenCandidates.size,
@@ -562,6 +780,11 @@ function getScopedComposerAttachmentState(composer) {
 }
 
 function candidateStructuralSignature(candidate, attachmentState) {
+  if (candidate?.classList?.contains?.("composer-attachment-surface")) {
+    const context = currentResourceCardContext(candidate, ChatGptAdapter.findComposer(), attachmentState.composerSurface);
+    if (!context || !isVisible(candidate) || !isVisible(context.region) || !isVisible(context.removeControl)) return null;
+    return `composer-text-resource|SPAN|${context.cardDepth}|${context.regionDepth}|remove`;
+  }
   const derivedRemoveControl = findDerivedFileTileRemoveControl(candidate, attachmentState.composerSurface);
   const removeControl = findRemoveControl(candidate) ?? derivedRemoveControl ??
     (hasRemoveSemantics(candidate) ? candidate : null);
@@ -738,6 +961,7 @@ function promptDeliveryBindingMatches(transaction, binding) {
     left.repeatIndex === right.repeatIndex &&
     left.sendsCompleted === right.sendsCompleted &&
     left.promptHash === right.promptHash &&
+    (left.inputHash ?? null) === (right.inputHash ?? null) &&
     left.documentInstanceId === right.documentInstanceId &&
     left.conversationKey === right.conversationKey &&
     left.runnerToken === right.runnerToken;
@@ -805,12 +1029,14 @@ function pausedPromptTextProofIsValid(proof, expectedText, binding) {
       ChatGptAdapter.getConversationKey() !== proof.binding.conversationKey) return false;
   const attachments = getScopedComposerAttachmentState(composer);
   return attachments.known === true && attachments.count === 0 && attachments.hiddenCount === 0 &&
+    (!proof.composerSnapshot || sameComposerTree(proof.composerSnapshot, snapshotComposerTree(composer))) &&
+    (!proof.composerNodes || sameComposerNodeIdentity(proof.composerNodes, composer)) &&
     composerTextMatchesExpected(expectedText, ChatGptAdapter.getComposerText(composer));
 }
 
 function pausedPromptTextBindingCanAdvance(previous, next) {
   const fields = ["runId", "executionSessionId", "stepId", "stepIndex", "repeatIndex", "sendsCompleted",
-    "promptHash", "documentInstanceId", "conversationKey"];
+    "promptHash", "inputHash", "documentInstanceId", "conversationKey"];
   return Boolean(next && fields.every((key) => previous[key] === next[key]) &&
     typeof next.deliveryAttemptToken === "string" && next.deliveryAttemptToken &&
     next.deliveryAttemptToken !== previous.deliveryAttemptToken &&
@@ -858,6 +1084,16 @@ function inspectPromptDeliveryTransaction(transaction, expectedText, binding, ex
     };
   }
   const composerText = ChatGptAdapter.getComposerText(composer);
+  let prefixPreserved = true;
+  if (transaction.appendPrefixSnapshot) {
+    try { prefixPreserved = composerTreeRetainsPrefix(transaction.appendPrefixSnapshot, snapshotComposerTree(composer)); }
+    catch { prefixPreserved = false; }
+  }
+  if (!prefixPreserved) return {
+    ok: false,
+    reason: "text-mismatch",
+    diagnostic: promptDeliveryDiagnostic(transaction, attachmentState, "other", "text-mismatch", "invalid")
+  };
   const normalizedComposerText = normalizeComposerComparableText(composerText);
   const composerTextState = normalizedComposerText.length === 0
     ? "empty"
@@ -874,9 +1110,18 @@ function inspectPromptDeliveryTransaction(transaction, expectedText, binding, ex
   let mode = null;
   let candidate = null;
   let attachmentCandidateRecognized = false;
+  const retainedAppendPrefix = typeof transaction.appendPrefixText === "string" &&
+    (composerTextMatchesExpected(transaction.appendPrefixText, composerText) ||
+      composerTextMatchesExpected(transaction.appendPrefixText + transaction.appendSeparator, composerText));
+  // A paste appends only the suffix. If the provider converts that suffix into a
+  // tile, the original authorized input must still be present. Losing it is not
+  // interpreted as conversion of the complete combined instruction.
+  const attachmentComposerCompatible = typeof transaction.appendPrefixText === "string"
+    ? retainedAppendPrefix
+    : ["empty", "minimal"].includes(composerTextState);
   if (attachmentState.count === 0 && composerTextState === "exact") {
     mode = "text";
-  } else if (attachmentState.count === 1 && ["empty", "minimal"].includes(composerTextState)) {
+  } else if (attachmentState.count === 1 && attachmentComposerCompatible) {
     candidate = attachmentState.logicalNodes[0] ?? null;
     const candidateIsNew = candidate && !transaction.beforeAttachmentNodes.has(candidate);
     const candidateOwnedBySurface = candidate && transaction.composerSurface.contains(candidate);
@@ -921,13 +1166,13 @@ function inspectPromptDeliveryTransaction(transaction, expectedText, binding, ex
     transaction.stableSince = now;
   }
   if (!mode || (expectedMode && mode !== expectedMode)) {
-    const reason = attachmentCandidateRecognized && ["empty", "minimal"].includes(composerTextState)
+    const reason = attachmentCandidateRecognized && attachmentComposerCompatible
       ? "settling"
       : (attachmentState.count > 0
       ? "attachment-provenance-lost"
-      : (["empty", "minimal"].includes(composerTextState) ? "settling" : "text-mismatch"));
+      : (attachmentComposerCompatible ? "settling" : "text-mismatch"));
     const lastState = (attachmentState.count === 0 || attachmentCandidateRecognized) &&
-      ["empty", "minimal"].includes(composerTextState)
+      attachmentComposerCompatible
       ? "attachment-pending"
       : (attachmentState.count > 0 && composerTextState !== "empty" ? "ambiguous" : "invalid");
     return {
@@ -958,6 +1203,19 @@ function inspectPromptDeliveryTransaction(transaction, expectedText, binding, ex
       mode === "text" ? "text-ready" : "attachment-ready"
     )
   };
+}
+
+function promptAppendProofIsValid(proof) {
+  if (!proof || !proof.lifetime?.matches() || proof.documentInstanceId !== instanceId ||
+      ChatGptAdapter.getConversationKey() !== proof.conversationKey) return false;
+  const composer = ChatGptAdapter.findComposer();
+  if (composer !== proof.composer || safeComposerSurface(composer)?.node !== proof.surface ||
+      proof.tracker.epoch !== proof.userMutationEpoch ||
+      ChatGptAdapter.getComposerText(composer) !== proof.originalText) return false;
+  if (proof.snapshot && !sameComposerTree(proof.snapshot, snapshotComposerTree(composer))) return false;
+  if (proof.nodes && !sameComposerNodeIdentity(proof.nodes, composer)) return false;
+  const attachments = getScopedComposerAttachmentState(composer);
+  return attachments.known === true && attachments.count === 0 && attachments.hiddenCount === 0;
 }
 
 var ChatGptAdapter = {
@@ -1047,10 +1305,57 @@ var ChatGptAdapter = {
     return composer.getAttribute("contenteditable") !== "false";
   },
 
-  writePrompt(text, binding = null) {
+  preparePromptAppend(prompt) {
+    const composer = this.findComposer();
+    if (!composer) return null;
+    const originalText = this.getComposerText(composer);
+    const plainInput = composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement;
+    const snapshot = plainInput ? null : snapshotComposerTree(composer);
+    if (composerIsEffectivelyEmpty(originalText) && !hasStructuredComposerInput(snapshot)) return null;
+    if (!plainInput && !isProseMirrorComposer(composer)) throw makeError("composer_verification_failed");
+    const attachments = getScopedComposerAttachmentState(composer);
+    if (attachments.known !== true || attachments.hiddenCount !== 0 || attachments.count !== 0) {
+      throw makeError("composer_attachment_unconfirmed");
+    }
+    const tracker = getComposerInteractionTracker(composer, {
+      node: attachments.composerSurface, kind: attachments.scopeKind, composerDepth: attachments.composerDepth
+    });
+    const conversationKey = this.getConversationKey();
+    const lifetime = createPromptTextOwnershipLifetime();
+    if (!tracker || !lifetime) { lifetime?.dispose(); throw makeError("draft_present"); }
+    const prefix = normalizeComposerComparableText(originalText);
+    const separator = prefix.endsWith("\n") ? "" : "\n";
+    const appendText = separator + normalizeComposerComparableText(prompt);
+    const plan = Object.freeze({ expectedText: prefix + appendText, appendText, hasExisting: true });
+    promptAppendPlans.set(plan, {
+      composer, surface: attachments.composerSurface, originalText, snapshot,
+      nodes: snapshot ? composerNodeIdentity(composer) : null, prefix, separator,
+      macro: normalizeComposerComparableText(prompt), tracker, userMutationEpoch: tracker.epoch,
+      lifetime, documentInstanceId: instanceId, conversationKey
+    });
+    return plan;
+  },
+
+  inspectPromptAppend(plan) {
+    const proof = plan && typeof plan === "object" ? promptAppendPlans.get(plan) : null;
+    try { return promptAppendProofIsValid(proof); } catch { return false; }
+  },
+
+  disposePromptAppend(plan) {
+    const proof = plan && typeof plan === "object" ? promptAppendPlans.get(plan) : null;
+    if (!proof) return;
+    promptAppendPlans.delete(plan);
+    proof.lifetime.dispose();
+  },
+
+  writePrompt(text, binding = null, appendPlan = null) {
     const composer = this.findComposer();
     if (!composer) throw makeError("composer_missing");
-    if (!composerIsEffectivelyEmpty(this.getComposerText(composer))) throw makeError("draft_present");
+    const appendProof = appendPlan && typeof appendPlan === "object" ? promptAppendPlans.get(appendPlan) : null;
+    if (appendPlan) {
+      if (!appendProof || appendProof.macro !== normalizeComposerComparableText(text) ||
+          !this.inspectPromptAppend(appendPlan)) throw makeError("draft_present");
+    } else if (!composerIsEffectivelyEmpty(this.getComposerText(composer))) throw makeError("draft_present");
     const attachmentState = getScopedComposerAttachmentState(composer);
     const tracker = getComposerInteractionTracker(composer, {
       node: attachmentState.composerSurface,
@@ -1061,22 +1366,33 @@ var ChatGptAdapter = {
         attachmentState.hiddenCount !== 0 || !binding || typeof binding !== "object") {
       throw makeError("composer_attachment_unconfirmed");
     }
+    // Consume before any event dispatch; reentrancy or retry cannot append twice.
+    if (appendPlan) promptAppendPlans.delete(appendPlan);
     // Capture navigation lifetime before any focus, paste, or input event can run.
     const transaction = createPromptDeliveryTransaction(
       composer, attachmentState, tracker, binding, createPromptTextOwnershipLifetime()
     );
+    transaction.expectedText = appendPlan ? appendPlan.expectedText : text;
+    if (appendProof) {
+      transaction.appendPrefixText = appendProof.prefix;
+      transaction.appendSeparator = appendProof.separator;
+      transaction.appendPrefixSnapshot = appendProof.snapshot;
+    }
     startPromptDeliveryObserver(transaction);
     try {
       composer.focus();
+      if (appendProof && !promptAppendProofIsValid(appendProof)) throw makeError("draft_present");
 
       if (composer instanceof HTMLTextAreaElement || composer instanceof HTMLInputElement) {
         const prototype = composer instanceof HTMLTextAreaElement
           ? HTMLTextAreaElement.prototype
           : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(prototype, "value")?.set;
-        if (setter) setter.call(composer, text);
-        else composer.value = text;
-        composer.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: text }));
+        if (setter) setter.call(composer, transaction.expectedText);
+        else composer.value = transaction.expectedText;
+        composer.dispatchEvent(new InputEvent("input", {
+          bubbles: true, inputType: "insertText", data: appendPlan ? appendPlan.appendText : text
+        }));
         composer.dispatchEvent(new Event("change", { bubbles: true }));
         transaction.pasteHandled = true;
         return transaction;
@@ -1088,12 +1404,15 @@ var ChatGptAdapter = {
       // Enter-key submission risk. Unhandled events fail closed; sendPromptSafely performs two exact
       // readbacks plus fresh Run/document/lease checks before a Send click is reachable.
       if (!isProseMirrorComposer(composer)) throw makeError("composer_verification_failed");
-      writeProseMirrorPrompt(composer, text);
+      if (appendPlan) appendProseMirrorPrompt(composer, appendPlan.appendText);
+      else writeProseMirrorPrompt(composer, text);
       transaction.pasteHandled = true;
       return transaction;
     } catch (error) {
       this.finishPromptDelivery(transaction);
       throw error;
+    } finally {
+      appendProof?.lifetime?.dispose();
     }
   },
 
@@ -1112,7 +1431,9 @@ var ChatGptAdapter = {
       source: transaction, expectedText, binding: transaction.binding,
       composer: transaction.composer, surface: transaction.composerSurface,
       tracker: transaction.tracker, userMutationEpoch: transaction.userMutationEpoch,
-      lifetime: transaction.textOwnershipLifetime
+      lifetime: transaction.textOwnershipLifetime,
+      composerSnapshot: snapshotComposerTree(transaction.composer),
+      composerNodes: composerNodeIdentity(transaction.composer)
     });
     transaction.pausedTextReceipt = receipt;
     return receipt;
@@ -1134,6 +1455,10 @@ var ChatGptAdapter = {
       const transaction = createPromptDeliveryTransaction(proof.composer, attachments, proof.tracker, binding, proof.lifetime);
       transaction.userMutationEpoch = proof.userMutationEpoch;
       transaction.pasteHandled = true;
+      transaction.expectedText = expectedText;
+      transaction.appendPrefixText = proof.source.appendPrefixText;
+      transaction.appendSeparator = proof.source.appendSeparator;
+      transaction.appendPrefixSnapshot = proof.source.appendPrefixSnapshot;
       transaction.requiresTextOwnershipLifetime = true;
       proof.source.textOwnershipLifetime = null;
       startPromptDeliveryObserver(transaction);
@@ -1267,9 +1592,10 @@ function makeError(code, details = null) {
   const messages = {
     composer_missing: "ChatGPTの入力欄を検出できませんでした。",
     composer_not_ready: "ChatGPTの入力欄が利用可能になりませんでした。",
-    draft_present: "入力欄に既存の下書きがあります。上書きせず停止しました。",
+    draft_present: "入力欄を安全に追記・再利用できることを確認できません。入力は上書きしていません。内容と残りの回数を確認してください。",
     unexpected_attachment: "ChatGPTの入力欄に添付ファイルが残っているため、安全のため送信しませんでした。添付内容を確認し、不要であれば手動で削除してから新しく実行してください。",
     composer_attachment_unconfirmed: "ChatGPTの入力欄に添付ファイルがないことを確認できないため、安全のため送信しませんでした。入力欄の状態を確認してから新しく実行してください。",
+    paste_attachment_unverified: "入力後に現れた添付の内容が今回のプロンプトと一致することを確認できないため、送信前に停止しました。添付は削除していません。「停止」を押し、ChatGPT側で内容と送信先を確認してください。",
     paste_attachment_provenance_lost: "既存または出所を確認できない添付ファイルがあるため、安全のため送信しませんでした。添付内容を確認して新しく実行してください。",
     paste_attachment_unrecognized: "長文がChatGPTの添付形式へ変換されましたが、安全に送信対象として確認できませんでした。添付状態を確認して新しく実行してください。",
     paste_attachment_settlement_timeout: "長文の添付変換を安全に確認できなかったため停止しました。添付状態を確認して新しく実行してください。",
@@ -1335,7 +1661,7 @@ async function appendDiagnostic(type, meta = {}) {
     .includes(meta.fallbackRejectReason)) {
     allowedMeta.fallbackRejectReason = meta.fallbackRejectReason;
   }
-  if (["empty", "exact", "other", "unknown"].includes(meta.composerTextState)) {
+  if (["empty", "minimal", "exact", "other", "unknown"].includes(meta.composerTextState)) {
     allowedMeta.composerTextState = meta.composerTextState;
   }
   if (["form", "marked-ancestor", "bounded-common-ancestor", "unknown"].includes(meta.scopeKind)) {
@@ -1616,4 +1942,4 @@ async function migrateLeaseIfNeeded(lease, run) {
   return lease;
 }
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.2", ready: true };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.3", ready: true };

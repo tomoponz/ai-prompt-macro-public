@@ -7,12 +7,14 @@ import { createReadOnlyBackpressure } from "../src/read-only-backpressure.js";
 import { recoveryRuntimeBounds } from "../src/recovery-policy.js";
 import { preflightWorkflowStartSchedule } from "../src/workflow.js";
 import { normalizeTargetTitle } from "../src/target-display.js";
+import { isCanonicalConversationKey, START_CONVERSATION_REQUIRED_MESSAGE } from "../src/target-selection.js";
 
 const backgroundSource = fs.readFileSync(new URL("../src/background.js", import.meta.url), "utf8")
   .replace(/^import \{ createReadOnlyBackpressure \} from "\.\/read-only-backpressure\.js";\s*/, "")
   .replace(/^import \{ recoveryRuntimeBounds \} from "\.\/recovery-policy\.js";\s*/, "")
   .replace(/^import \{ preflightWorkflowStartSchedule \} from "\.\/workflow\.js";\s*/, "")
-  .replace(/^import \{ normalizeTargetTitle \} from "\.\/target-display\.js";\s*/, "");
+  .replace(/^import \{ normalizeTargetTitle \} from "\.\/target-display\.js";\s*/, "")
+  .replace(/^import \{ isCanonicalConversationKey, START_CONVERSATION_REQUIRED_MESSAGE \} from "\.\/target-selection\.js";\s*/, "");
 
 function createBackgroundHarness() {
   const listeners = { installed: [], startup: [], message: [], alarm: [], tabRemoved: [], tabUpdated: [] };
@@ -54,6 +56,8 @@ function createBackgroundHarness() {
     recoveryRuntimeBounds,
     preflightWorkflowStartSchedule,
     normalizeTargetTitle,
+    isCanonicalConversationKey,
+    START_CONVERSATION_REQUIRED_MESSAGE,
     chrome: {
       runtime: {
         getManifest() { return { version: "0.4.0" }; },

@@ -49,6 +49,15 @@ test("navigation fixture proves its initial Start before testing the later conve
   assert.match(body, /await waitForSendCount\(firstChat, 1\);/);
 });
 
+test("C7 attachment fixtures establish the current document before both negative Start cases", () => {
+  const body = section('  if (runsScenarioGroup("attachment-guard")) {', '  if (runsScenarioGroup("attachment-baseline")) {');
+  assert.match(body, /await selectReadyTarget\(sidePanel, firstChat, firstTabId\);/);
+  for (const prompt of ["C7 must not mix with an attachment", "C7 residual attachment fresh Run"]) {
+    const pattern = new RegExp(`await startQuickRun\\(sidePanel, \\{ prompt: "${prompt}", repeat: 1, delaySeconds: 0 \\},\\s*\\{ page: firstChat, tabId: firstTabId \\}\\);`);
+    assert.match(body, pattern, "a Start click alone does not prove that the current document accepted Start");
+  }
+});
+
 test("the real Quick helper orders configure -> exact-target readiness -> one click", async () => {
   const panel = {};
   const config = { prompt: "fixture", repeat: 20, delaySeconds: 0 };
@@ -103,7 +112,7 @@ for (const failedBoundary of ["configureQuickRun", "confirmStartReadiness"]) {
   });
 }
 
-test("omitting readyTarget preserves intentional New Chat and negative-scenario helper behavior", async () => {
+test("omitting readyTarget leaves readiness to production Start without helper retries", async () => {
   let checks = 0;
   let clicks = 0;
   const start = startWith({
@@ -141,6 +150,7 @@ function checkedStart(observations, { selected = String(tabId), enabled = true }
       return observations[Math.min(reads++, observations.length - 1)];
     },
     locator: (selector) => {
+      if (selector === "#refreshTabs") return { click: async () => {} };
       if (selector === "#targetTab") return { inputValue: async () => selected };
       assert.equal(selector, "#start");
       return { isEnabled: async () => enabled };

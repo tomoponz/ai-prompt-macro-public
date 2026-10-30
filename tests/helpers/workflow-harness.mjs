@@ -1,3 +1,4 @@
+import { CURRENT_EXTENSION_VERSION } from "./extension-version.mjs";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
@@ -9,7 +10,7 @@ const controllerSource = fs.readFileSync(new URL("../../src/content-controller.j
 
 export const clone = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)));
 
-export const CONTENT_VERSION = "0.4.2";
+export const CONTENT_VERSION = CURRENT_EXTENSION_VERSION;
 export const CONVERSATION_KEY = "chatgpt:c:project-three-prompt";
 export const SESSION_ID = "session-block-workflow";
 export const TAB_ID = 314;
@@ -54,6 +55,9 @@ export const OUTPUT_BLIND_ADAPTER_SURFACE = new Set([
   "inspectPausedPromptText",
   "adoptPausedPromptText",
   "disposePausedPromptText",
+  "preparePromptAppend",
+  "inspectPromptAppend",
+  "disposePromptAppend",
   "isComposerWritable",
   "writePrompt",
   "isGenerating",
@@ -157,7 +161,7 @@ export function createWorkflowHarness(options = {}) {
       const scheduled = scheduledPageActions.shift();
       switch (scheduled.type) {
         case "convert":
-          page.text = "";
+          page.text = typeof scheduled.appendPrefixText === "string" ? scheduled.appendPrefixText : "";
           page.attachmentCount = 1;
           break;
         case "replace":
@@ -222,6 +226,14 @@ export function createWorkflowHarness(options = {}) {
   const composer = { id: "composer", closest: () => composerForm };
   const promptBindingMatches = (left, right) => JSON.stringify(left) === JSON.stringify(right);
   const pausedTextReceipts = new WeakMap();
+  // This is a model of the production input capability, not a DOM/attachment
+  // detector. Tests using this harness cannot establish provider paste behavior.
+  const appendPlans = new WeakMap();
+  const appendPlanIsValid = (proof) => Boolean(proof && proof.lifetime?.matches() &&
+    proof.composer === rawAdapter.findComposer() && proof.text === page.text &&
+    proof.userMutationEpoch === page.userMutationEpoch &&
+    proof.documentInstanceId === context.instanceId && proof.conversationKey === currentConversationKey &&
+    page.attachmentCount === 0 && page.unscopedAttachmentCount === 0);
   const pausedTextProofValid = (proof, text, binding) => Boolean(proof &&
     proof.text === text && promptBindingMatches(proof.binding, binding) && proof.lifetime?.matches() &&
     proof.binding.documentInstanceId === context.instanceId && proof.binding.conversationKey === currentConversationKey &&
@@ -248,32 +260,73 @@ export function createWorkflowHarness(options = {}) {
     findStopButton: () => (clock < page.generationEndsAt ? stopButton : null),
     getComposerText: () => page.text,
     getComposerAttachmentState: () => ({
-      known: true,
+      known: page.unscopedAttachmentCount === 0,
       count: page.attachmentCount,
       logicalNodes: [...attachmentNodes],
       hiddenCount: 0,
       composerForm
     }),
     isComposerWritable: () => true,
-    writePrompt(text, binding) {
+    preparePromptAppend(prompt) {
+      if (context.composerIsEffectivelyEmpty(page.text)) return null;
+      if (page.attachmentCount !== 0 || page.unscopedAttachmentCount !== 0) {
+        throw context.makeError("composer_attachment_unconfirmed");
+      }
+      const lifetime = context.createPromptTextOwnershipLifetime();
+      if (!lifetime) throw context.makeError("draft_present");
+      const prefix = context.normalizeComposerComparableText(page.text);
+      const macro = context.normalizeComposerComparableText(prompt);
+      const appendText = `${prefix.endsWith("\n") ? "" : "\n"}${macro}`;
+      const plan = Object.freeze({ expectedText: `${prefix}${appendText}`, appendText, hasExisting: true });
+      appendPlans.set(plan, { prompt, text: page.text, prefix, separator: prefix.endsWith("\n") ? "" : "\n", lifetime, composer,
+        userMutationEpoch: page.userMutationEpoch, documentInstanceId: context.instanceId,
+        conversationKey: currentConversationKey });
+      return plan;
+    },
+    inspectPromptAppend(plan) {
+      return appendPlanIsValid(appendPlans.get(plan));
+    },
+    disposePromptAppend(plan) {
+      const proof = appendPlans.get(plan);
+      appendPlans.delete(plan);
+      proof?.lifetime?.dispose();
+    },
+    writePrompt(text, binding, appendPlan = null) {
       assert.ok(binding && typeof binding === "object", "production writePrompt requires an explicit binding");
+      const proof = appendPlan ? appendPlans.get(appendPlan) : null;
+      if (appendPlan && (!appendPlanIsValid(proof) || proof.prompt !== text)) {
+        throw context.makeError("draft_present");
+      }
+      if (!appendPlan && !context.composerIsEffectivelyEmpty(page.text)) {
+        throw context.makeError("draft_present");
+      }
+      const expectedText = appendPlan?.expectedText ?? text;
+      if (appendPlan) rawAdapter.disposePromptAppend(appendPlan);
       const transaction = newDeliveryTransaction(binding, context.createPromptTextOwnershipLifetime());
+      transaction.expectedText = expectedText;
+      if (proof) {
+        transaction.appendPrefixText = proof.prefix;
+        transaction.appendSeparator = proof.separator;
+      }
       page.activeDeliveryTransactions += 1;
-      page.text = text;
-      page.pendingPrompt = text;
-      record("write", { prompt: text });
+      page.text = expectedText;
+      page.pendingPrompt = expectedText;
+      record("write", { prompt: expectedText });
       if (convertPasteToAttachment === true ||
-          (typeof convertPasteToAttachment === "function" && convertPasteToAttachment({ text, page, context }))) {
-        page.text = "";
+          (typeof convertPasteToAttachment === "function" && convertPasteToAttachment({ text: expectedText, page, context }))) {
+        // Only the newly pasted suffix is converted. The existing input stays
+        // in the composer; erasing it would fail the production prefix guard.
+        page.text = typeof transaction.appendPrefixText === "string" ? transaction.appendPrefixText : "";
         page.attachmentCount = 1;
       }
       for (const entry of pasteAttachmentTimeline) {
         const afterMs = Math.max(0, Math.floor(Number(entry?.afterMs) || 0));
-        scheduledPageActions.push({ at: clock + afterMs, type: entry?.type, count: entry?.count });
+        scheduledPageActions.push({ at: clock + afterMs, type: entry?.type, count: entry?.count,
+          appendPrefixText: transaction.appendPrefixText });
       }
       // The runner awaits a settle window right after this call. A fault injected here
       // is therefore observed by the readback that guards the irreversible click.
-      onWrite?.({ text, page, context });
+      onWrite?.({ text: expectedText, page, context });
       return transaction;
     },
     inspectPromptDelivery(transaction, expectedText, binding, expectedMode = null, options = {}) {
@@ -306,6 +359,10 @@ export function createWorkflowHarness(options = {}) {
           transaction.userMutationEpoch !== page.userMutationEpoch) {
         return { ok: false, reason: "user-interaction", diagnostic: diagnostic("user-interaction", "unknown", "invalid") };
       }
+      if (page.unscopedAttachmentCount !== 0) return {
+        ok: false, reason: "attachment-unconfirmed",
+        diagnostic: diagnostic("attachment-unconfirmed", "unknown", "invalid")
+      };
       transaction.mutations = Math.max(
         transaction.mutations,
         Math.max(0, Number(page.surfaceMutationBatches ?? 0) - Number(transaction.surfaceMutationBaseline ?? 0))
@@ -318,6 +375,10 @@ export function createWorkflowHarness(options = {}) {
         : (context.composerTextMatchesExpected(expectedText, page.text)
             ? "exact"
             : (context.composerIsEffectivelyEmpty(page.text) ? "minimal" : "other"));
+      const attachmentComposerCompatible = typeof transaction.appendPrefixText === "string"
+        ? (context.composerTextMatchesExpected(transaction.appendPrefixText, page.text) ||
+            context.composerTextMatchesExpected(transaction.appendPrefixText + transaction.appendSeparator, page.text))
+        : ["empty", "minimal"].includes(composerTextState);
       transaction.maxLogicalCandidates = Math.max(transaction.maxLogicalCandidates, page.attachmentCount);
       if (page.attachmentCount > 1) transaction.invalidReason = "extra-attachment";
       if (transaction.invalidReason) return {
@@ -331,7 +392,7 @@ export function createWorkflowHarness(options = {}) {
       };
       if (page.attachmentCount === 0 && page.text === expectedText) {
         mode = "text";
-      } else if (page.attachmentCount === 1 && ["empty", "minimal"].includes(composerTextState)) {
+      } else if (page.attachmentCount === 1 && attachmentComposerCompatible) {
         candidate = attachmentNodes[0];
         const beforeAttachmentCount = Number.isInteger(transaction.beforeAttachmentCount)
           ? transaction.beforeAttachmentCount
@@ -423,6 +484,11 @@ export function createWorkflowHarness(options = {}) {
         throw context.makeError("draft_present");
       }
       const transaction = newDeliveryTransaction(binding, proof.lifetime);
+      transaction.expectedText = text;
+      if (typeof proof.source.appendPrefixText === "string") {
+        transaction.appendPrefixText = proof.source.appendPrefixText;
+        transaction.appendSeparator = proof.source.appendSeparator;
+      }
       transaction.userMutationEpoch = proof.userMutationEpoch;
       transaction.requiresTextOwnershipLifetime = true;
       proof.source.textOwnershipLifetime = null;
@@ -437,7 +503,7 @@ export function createWorkflowHarness(options = {}) {
     },
     getPromptDeliveryAckState(transaction, binding, mode) {
       const valid = transaction?.active && promptBindingMatches(transaction.binding, binding) &&
-        transaction.userMutationEpoch === page.userMutationEpoch;
+        transaction.userMutationEpoch === page.userMutationEpoch && page.unscopedAttachmentCount === 0;
       return {
         known: valid,
         cleared: valid && context.composerIsEffectivelyEmpty(page.text) && page.attachmentCount === 0 &&
@@ -655,15 +721,39 @@ export function createWorkflowHarness(options = {}) {
             }
             case "AIPM_RUN_CONFIRM_NEW_CHAT_TARGET": {
               const targetKey = message.conversationKey;
-              if (typeof targetKey !== "string" || !targetKey.startsWith("chatgpt:c:")) {
+              if (typeof targetKey !== "string" || !/^chatgpt:c:[A-Za-z0-9-]+$/.test(targetKey)) {
                 return { ok: false, error: "Resume先のcanonical conversationを確認できません。" };
               }
-              const pending = storedRun?.status === "paused" &&
-                storedRun?.pauseReason === "new-chat-confirmation-required" &&
-                String(storedRun?.conversationKey).startsWith("chatgpt:new:");
-              if (!storedRun || storedRun.runId !== message.expectedRunId || !pending) {
+              const observed = storedRun;
+              const sameTarget = observed?.conversationKey === targetKey;
+              const pending = observed?.status === "paused" &&
+                observed?.phase === "new-chat-confirmation-required" &&
+                observed?.pauseReason === "new-chat-confirmation-required" &&
+                (String(observed?.conversationKey).startsWith("chatgpt:new:") || sameTarget);
+              if (!observed || observed.runId !== message.expectedRunId || !pending ||
+                  observed.executionSessionId !== message.executionSessionId ||
+                  observed.boundTabId !== TAB_ID || !ownsCurrentTopDocument(message) ||
+                  !Number.isInteger(message.expectedStateRevision) ||
+                  message.expectedStateRevision !== observed.stateRevision ||
+                  (sameTarget && observed.documentInstanceId !== message.documentInstanceId)) {
                 return { ok: false, error: "confirmation-required Runが一致しません。" };
               }
+              const step = observed.workflow?.steps?.[observed.cursor?.stepIndex];
+              if (observed.outbox?.state !== "submitted" || !observed.outbox.id ||
+                  ["stepIndex", "repeatIndex", "sendsCompleted"].some(field =>
+                    !Number.isInteger(observed.cursor?.[field]) || observed.cursor[field] < 0 ||
+                    observed.cursor[field] !== observed.outbox.position?.[field]) ||
+                  step?.type !== "prompt" || step.delivery !== "send" || typeof step.prompt !== "string" ||
+                  step.id !== observed.outbox.stepId || !Number.isInteger(step.repeat) ||
+                  observed.cursor.repeatIndex >= step.repeat) {
+                return { ok: false, error: "初回送信の確認待ち位置を安全に照合できません。" };
+              }
+              const digest = await webcrypto.subtle.digest("SHA-256", new TextEncoder().encode(step.prompt));
+              const hash = Buffer.from(digest).toString("hex");
+              if (storedRun !== observed || observed.outbox.promptHash !== hash) {
+                return { ok: false, errorCode: "RUN_STATE_CONFLICT", error: "確認待ちの状態が変わりました。" };
+              }
+              if (sameTarget) return { ok: true, run: clone(observed) };
               storedRun = {
                 ...storedRun,
                 conversationKey: targetKey,
@@ -900,14 +990,14 @@ export function createWorkflowHarness(options = {}) {
     },
     // Ctrl+R: the live runner is invalidated and a new document adopts the
     // durable snapshot.
-    async reload(idleMs = 0) {
+    async reload(idleMs = 0, { preserveComposer = false } = {}) {
       context.localRunnerToken += 1;
       await this.settle();
       clock += Math.max(0, idleMs);
       runDuePageActions();
       const reloadedAt = clock;
       context.recoveryStarted = false;
-      page.text = "";
+      if (!preserveComposer) page.text = "";
       await context.recoverIfNeeded();
       await this.settle();
       return reloadedAt;

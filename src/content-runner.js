@@ -36,16 +36,19 @@ function pausedPromptRunMatches(candidate, run) {
 
 function pausedPromptTextMatches(candidate, run, step) {
   return pausedPromptRunMatches(candidate, run) &&
+    candidate.originalPrompt === step?.prompt &&
     typeof ChatGptAdapter.inspectPausedPromptText === "function" &&
-    ChatGptAdapter.inspectPausedPromptText(candidate.domReceipt, step.prompt, candidate.binding) === true;
+    ChatGptAdapter.inspectPausedPromptText(candidate.domReceipt, candidate.expectedText, candidate.binding) === true;
 }
 
 function capturePausedPromptCandidate(transaction, binding, run, step) {
   if (typeof ChatGptAdapter.capturePausedPromptText !== "function") return null;
-  const domReceipt = ChatGptAdapter.capturePausedPromptText(transaction, step.prompt, binding);
+  const expectedText = typeof transaction?.expectedText === "string" ? transaction.expectedText : step.prompt;
+  const domReceipt = ChatGptAdapter.capturePausedPromptText(transaction, expectedText, binding);
   if (!domReceipt) return null;
   return {
-    domReceipt, binding, epoch: pausedPromptReceiptEpoch, runId: run.runId,
+    domReceipt, binding, expectedText, originalPrompt: step.prompt,
+    epoch: pausedPromptReceiptEpoch, runId: run.runId,
     executionSessionId: run.executionSessionId, conversationKey: run.conversationKey,
     documentInstanceId: instanceId, workflow: JSON.stringify(run.workflow), cursor: JSON.stringify(run.cursor)
   };
@@ -59,7 +62,7 @@ function armPausedPromptReceipt(candidate, run) {
     return;
   }
   revokePausedPromptReceipt();
-  if (run.status === "paused" && run.pauseReason === "user-pause" && !run.outbox &&
+  if (canRetainPausedPromptInput(run) &&
       pausedPromptTextMatches(candidate, run, currentStep(run))) {
     candidate.pausedRevision = run.stateRevision;
     pausedPromptReceipt = candidate;
@@ -73,11 +76,54 @@ function armPausedPromptReceipt(candidate, run) {
 function takePausedPromptReceipt(run) {
   const candidate = pausedPromptReceipt;
   pausedPromptReceipt = null;
-  if (candidate && run.status === "paused" && run.pauseReason === "user-pause" &&
-      !run.outbox && candidate.pausedRevision === run.stateRevision &&
+  if (candidate && canRetainPausedPromptInput(run) && candidate.pausedRevision === run.stateRevision &&
       pausedPromptTextMatches(candidate, run, currentStep(run))) return candidate;
   disposePausedPromptCandidate(candidate);
   return null;
+}
+
+function canRetainPausedPromptInput(run) {
+  return run?.status === "paused" && ((run.pauseReason === "user-pause" && !run.outbox) ||
+    (run.phase === "prepared" && run.outbox?.state === "prepared" && run.resumable === true));
+}
+
+// Initial composer content is an in-memory, one-use capability. It is never copied
+// into the workflow or restored after a reload, later iteration, or user edit.
+var initialPromptAppend = null;
+function revokeInitialPromptAppend() {
+  if (initialPromptAppend?.plan) ChatGptAdapter.disposePromptAppend?.(initialPromptAppend.plan);
+  initialPromptAppend = null;
+}
+
+async function captureInitialPromptAppend(run) {
+  revokeInitialPromptAppend();
+  const firstPrompt = run.workflow.steps.find((step) => step.type === "prompt");
+  if (firstPrompt?.delivery !== "send" || typeof ChatGptAdapter.preparePromptAppend !== "function") return;
+  const plan = ChatGptAdapter.preparePromptAppend(firstPrompt.prompt);
+  if (plan) {
+    initialPromptAppend = {
+      plan, runId: run.runId, executionSessionId: run.executionSessionId,
+      conversationKey: run.conversationKey, documentInstanceId: instanceId,
+      stepId: firstPrompt.id, workflow: JSON.stringify(run.workflow)
+    };
+    // A hash-only obligation survives reload/Pause without storing the existing
+    // input. Losing the local capability must never silently omit that input.
+    run.initialInputRequirement = {
+      stepId: firstPrompt.id,
+      promptHash: await sha256(firstPrompt.prompt),
+      inputHash: await sha256(plan.expectedText)
+    };
+  }
+}
+
+function initialAppendForPosition(run, step) {
+  const receipt = initialPromptAppend;
+  if (!receipt || receipt.runId !== run.runId) return null;
+  if (receipt.executionSessionId !== run.executionSessionId || receipt.conversationKey !== run.conversationKey ||
+      receipt.documentInstanceId !== instanceId || receipt.workflow !== JSON.stringify(run.workflow) ||
+      run.cursor.sendsCompleted !== 0 || run.cursor.repeatIndex !== 0 || receipt.stepId !== step.id ||
+      ChatGptAdapter.inspectPromptAppend?.(receipt.plan) !== true) throw makeError("draft_present");
+  return receipt.plan;
 }
 
 var MAX_WORKFLOW_STEPS = 40;
@@ -311,8 +357,12 @@ function assertSendBudgetAvailable(run, step, expectedPosition = null) {
 }
 
 async function confirmedOutboxMatchesCurrentPosition(run) {
+  return outboxMatchesCurrentPosition(run, "confirmed");
+}
+
+async function outboxMatchesCurrentPosition(run, state) {
   try {
-    if (!run?.outbox || run.outbox.state !== "confirmed") return false;
+    if (!run?.outbox || run.outbox.state !== state) return false;
     requireRuntimeCursorAuthority(run);
     const step = currentStep(run);
     const expectedPosition = assertSendBudgetAvailable(run, step);
@@ -324,7 +374,10 @@ async function confirmedOutboxMatchesCurrentPosition(run) {
         run.outbox.stepId !== expectedPosition.stepId) {
       return false;
     }
-    return run.outbox.promptHash === await sha256(expectedPosition.prompt);
+    const promptMatches = run.outbox.promptHash === await sha256(expectedPosition.prompt);
+    const requirement = run.initialInputRequirement;
+    return promptMatches && (!requirement || (requirement.stepId === expectedPosition.stepId &&
+      requirement.promptHash === run.outbox.promptHash && requirement.inputHash === run.outbox.inputHash));
   } catch {
     return false;
   }
@@ -415,6 +468,10 @@ function currentStep(run) {
 function advanceCursor(run, wasSend) {
   const step = currentStep(run);
   if (!step) return;
+  if (wasSend && run.initialInputRequirement?.stepId === step.id) {
+    delete run.initialInputRequirement;
+    revokeInitialPromptAppend();
+  }
   const repeatableSend = step.type === "prompt" && step.delivery !== "draft";
   if (repeatableSend && run.cursor.repeatIndex + 1 < Math.max(1, Number(step.repeat ?? 1))) {
     run.cursor.repeatIndex += 1;
@@ -525,6 +582,7 @@ function isRunErrorResumable(run, code) {
     "composer_verification_failed",
     "unexpected_attachment",
     "composer_attachment_unconfirmed",
+    "paste_attachment_unverified",
     "paste_attachment_provenance_lost",
     "paste_attachment_unrecognized",
     "paste_attachment_settlement_timeout",
@@ -540,6 +598,13 @@ function isRunErrorResumable(run, code) {
   const deliveryAlreadyStarted = ["submitted", "confirmed"].includes(run?.outbox?.state) ||
     ["submitting", "waiting-ack", "new-chat-confirmation-required"].includes(run?.phase);
   return !nonResumable.has(code) && !deliveryAlreadyStarted;
+}
+
+function canResumeConfirmedObservation(run, code) {
+  return run?.outbox?.state === "confirmed" && [
+    "generation_timeout", "composer_not_ready", "ui_blocked", "captcha",
+    "login_required", "usage_limit", "service_error"
+  ].includes(code);
 }
 
 function assertComposerHasNoAttachments(composer) {
@@ -570,6 +635,7 @@ function createPromptDeliveryBinding(run, step, expectedPosition, promptHash, to
     repeatIndex: expectedPosition.repeatIndex,
     sendsCompleted: expectedPosition.sendsCompleted,
     promptHash,
+    inputHash: run.outbox?.inputHash ?? promptHash,
     documentInstanceId: instanceId,
     conversationKey: ChatGptAdapter.getConversationKey(),
     runnerToken: token
@@ -584,7 +650,8 @@ function assertPromptDeliveryRunBinding(run, step, expectedPosition, promptHash,
       binding.runId !== run.runId || binding.executionSessionId !== run.executionSessionId ||
       binding.stepId !== step.id || binding.stepIndex !== run.cursor.stepIndex ||
       binding.repeatIndex !== run.cursor.repeatIndex || binding.sendsCompleted !== run.cursor.sendsCompleted ||
-      binding.promptHash !== promptHash || binding.documentInstanceId !== instanceId ||
+      binding.promptHash !== promptHash || binding.inputHash !== (run.outbox?.inputHash ?? promptHash) ||
+      binding.documentInstanceId !== instanceId ||
       binding.conversationKey !== ChatGptAdapter.getConversationKey() || binding.runnerToken !== token) {
     throw makeError("run_state_conflict");
   }
@@ -594,7 +661,11 @@ function requirePromptDeliveryState(transaction, step, binding, expectedMode = n
   if (typeof ChatGptAdapter.inspectPromptDelivery !== "function") {
     throw makeError("paste_attachment_provenance_lost");
   }
-  const state = ChatGptAdapter.inspectPromptDelivery(transaction, step.prompt, binding, expectedMode, options);
+  const expectedText = typeof transaction?.expectedText === "string" ? transaction.expectedText : step.prompt;
+  const state = ChatGptAdapter.inspectPromptDelivery(transaction, expectedText, binding, expectedMode, options);
+  // The adapter owns scoped lifecycle checks: clean attachment baseline, the same
+  // composer/binding, one recognized candidate, no trusted interference and ready
+  // Send. This is conditional lifecycle evidence, not a claim about file bytes.
   if (state?.ok === true && ["text", "paste-attachment"].includes(state.mode)) return state;
   if (String(state?.reason ?? "").includes("attachment") ||
       ["user-interaction", "delivery-mode-changed", "composer-replaced",
@@ -656,7 +727,7 @@ async function waitForPromptDeliverySettlement(run, token, transaction, step, bi
     assertPromptDeliveryRunBinding(run, step, expectedPosition, promptHash, token, binding);
     lastState = ChatGptAdapter.inspectPromptDelivery(
       transaction,
-      step.prompt,
+      typeof transaction?.expectedText === "string" ? transaction.expectedText : step.prompt,
       binding,
       null,
       { settling: true }
@@ -745,6 +816,7 @@ function sameRunWorkflowAndCursorAuthority(run, latest) {
   if (!sameJsonAuthorityValue(latest?.cursor ?? null, run?.cursor ?? null)) return false;
   if (!sameJsonAuthorityValue(latest?.workflow ?? null, run?.workflow ?? null)) return false;
   if (!sameJsonAuthorityValue(latest?.outbox ?? null, run?.outbox ?? null)) return false;
+  if (!sameJsonAuthorityValue(latest?.initialInputRequirement ?? null, run?.initialInputRequirement ?? null)) return false;
   return sameJsonAuthorityValue(latest?.waitState ?? null, run?.waitState ?? null);
 }
 
@@ -886,21 +958,28 @@ async function sendPromptSafely(run, step, lease, token, pausedPrompt = null) {
 
   const composer = ChatGptAdapter.findComposer();
   if (!composer) throw makeError("composer_missing");
+  const appendPlan = pausedPrompt ? null : initialAppendForPosition(run, step);
   if (pausedPrompt) {
     if (pausedPrompt.resumeToken !== token || !pausedPromptTextMatches(pausedPrompt, run, step)) {
       throw makeError("draft_present");
     }
-  } else if (!composerIsEffectivelyEmpty(ChatGptAdapter.getComposerText(composer))) {
+  } else if (!appendPlan && !composerIsEffectivelyEmpty(ChatGptAdapter.getComposerText(composer))) {
     throw makeError("draft_present");
   }
   assertComposerHasNoAttachments(composer);
 
   const promptHash = await sha256(step.prompt);
+  const expectedText = pausedPrompt?.expectedText ?? appendPlan?.expectedText ?? step.prompt;
+  const inputHash = expectedText === step.prompt ? promptHash : await sha256(expectedText);
+  if (run.initialInputRequirement && (
+      run.initialInputRequirement.stepId !== step.id || run.initialInputRequirement.promptHash !== promptHash ||
+      run.initialInputRequirement.inputHash !== inputHash)) throw makeError("draft_present");
   run.phase = "prepared";
   run.outbox = {
     id: crypto.randomUUID(),
     stepId: step.id,
     promptHash,
+    inputHash,
     position: {
       stepIndex: expectedPosition.stepIndex,
       repeatIndex: expectedPosition.repeatIndex,
@@ -924,14 +1003,22 @@ async function sendPromptSafely(run, step, lease, token, pausedPrompt = null) {
     if (pausedPrompt.resumeToken !== token || !pausedPromptTextMatches(pausedPrompt, run, step)) {
       throw makeError("draft_present");
     }
-  } else if (!composerIsEffectivelyEmpty(ChatGptAdapter.getComposerText(composerBeforeWrite))) {
+  } else if (appendPlan ? ChatGptAdapter.inspectPromptAppend?.(appendPlan) !== true
+    : !composerIsEffectivelyEmpty(ChatGptAdapter.getComposerText(composerBeforeWrite))) {
     throw makeError("draft_present");
   }
   assertComposerHasNoAttachments(composerBeforeWrite);
   const deliveryBinding = createPromptDeliveryBinding(run, step, expectedPosition, promptHash, token);
-  const deliveryTransaction = pausedPrompt
-    ? ChatGptAdapter.adoptPausedPromptText(pausedPrompt.domReceipt, step.prompt, deliveryBinding)
-    : ChatGptAdapter.writePrompt(step.prompt, deliveryBinding);
+  let deliveryTransaction;
+  try {
+    deliveryTransaction = pausedPrompt
+      ? ChatGptAdapter.adoptPausedPromptText(pausedPrompt.domReceipt, expectedText, deliveryBinding)
+      : ChatGptAdapter.writePrompt(step.prompt, deliveryBinding, appendPlan);
+  } finally {
+    // Even a partially handled paste is one attempt; it must never be appended again.
+    if (appendPlan) revokeInitialPromptAppend();
+  }
+  deliveryTransaction.expectedText = expectedText;
   try {
     const observedDelivery = await waitForPromptDeliverySettlement(
       run,
@@ -955,7 +1042,7 @@ async function sendPromptSafely(run, step, lease, token, pausedPrompt = null) {
       throw makeError("send_unavailable");
     }
 
-    await assertRunCanContinue(run, token, { deferPause: true, authorityBoundary: "send-preflight" });
+    await assertRunCanContinue(run, token, { authorityBoundary: "send-preflight" });
     assertPromptDeliveryRunBinding(run, step, expectedPosition, promptHash, token, deliveryBinding);
     run.phase = "submitting";
     await saveActiveRun(run, "runner", "send-preflight");
@@ -1052,7 +1139,8 @@ async function sendPromptSafely(run, step, lease, token, pausedPrompt = null) {
     await saveActiveRun(run);
     return lease;
   } catch (error) {
-    if (error?.code === "user_pause" && run.phase === "prepared" && run.outbox?.state === "prepared") {
+    if (run.phase === "prepared" && run.outbox?.state === "prepared" &&
+        (error?.code === "user_pause" || isRunErrorResumable(run, error?.code))) {
       error.pausedPromptCandidate = capturePausedPromptCandidate(deliveryTransaction, deliveryBinding, run, step);
     }
     throw error;
@@ -1320,6 +1408,24 @@ async function executeRun(run, token, initialLease = null, pausedPrompt = null) 
   activeRunnerExecutionSessionId = run.executionSessionId;
   try {
     requireRuntimeCursorAuthority(run);
+    if (run.outbox?.state === "confirmed") {
+      // Explicit Resume of a confirmed delivery observes readiness only. The
+      // confirmed position never re-enters writePrompt or the Send boundary.
+      if (!(await confirmedOutboxMatchesCurrentPosition(run))) throw makeError("recovery_ambiguous");
+      lease = await acquireLease(run.conversationKey, run.runId, run.executionSessionId, run.workflow?.recovery);
+      if (!lease) throw makeError("lease_conflict");
+      await waitForReadyStability(run, token, lease);
+      const sentStep = currentStep(run);
+      advanceCursor(run, true);
+      run.outbox = null;
+      const more = run.cursor.stepIndex < run.workflow.steps.length || run.cursor.repeatIndex > 0;
+      const fence = more ? postSendDelayFence(run, sentStep) : null;
+      run.waitState = fence;
+      run.phase = fence ? "delay" : "ready";
+      await saveActiveRun(run);
+      await releaseLease(lease, run.runId);
+      lease = null;
+    }
     await awaitPostSendDelay(run, token);
     while (run.cursor.stepIndex < run.workflow.steps.length) {
       await assertRunCanContinue(run, token);
@@ -1449,12 +1555,26 @@ async function executeRun(run, token, initialLease = null, pausedPrompt = null) 
       return;
     }
 
-    const resumable = isRunErrorResumable(run, code);
+    const confirmedWait = canResumeConfirmedObservation(run, code);
+    const provablyPreSend = run.phase === "prepared" && run.outbox?.state === "prepared";
+    const resumable = confirmedWait || isRunErrorResumable(run, code);
     run.lastErrorCode = code;
     run.lastErrorMessage = error instanceof Error ? error.message : "Macro error";
     run.resumable = resumable;
+    if (resumable) {
+      // Resume must not race the old runner's receipt installation or lease
+      // release, including error pauses and confirmed wait-only recovery.
+      pauseFinalization = { runId: run.runId, executionSessionId: run.executionSessionId, token };
+      localPauseFinalization = pauseFinalization;
+    }
     try {
-      await pauseRun(run, code, resumable ? "paused" : "ambiguous");
+      // This error is raised only before the sole provider click. Keep that
+      // certainty without weakening the handling of in-flight deliveries.
+      const attachmentBlockedBeforeSend = code === "paste_attachment_unverified" &&
+        run.outbox?.state === "prepared";
+      await pauseRun(run, code, attachmentBlockedBeforeSend ? "attachment-blocked"
+        : confirmedWait ? "confirmed-wait" : provablyPreSend ? "prepared" : resumable ? "paused" : "ambiguous");
+      if (provablyPreSend && resumable) armPausedPromptReceipt(error.pausedPromptCandidate, run);
       const textSendReadiness = error?.details?.textSendReadiness;
       if (code === "send_unavailable" && textSendReadiness) {
         const recordReadinessDiagnostic = typeof appendDeferredPostCommitDiagnostic === "function"
@@ -1470,6 +1590,7 @@ async function executeRun(run, token, initialLease = null, pausedPrompt = null) 
         });
       }
     } catch (pauseError) {
+      disposePausedPromptCandidate(error.pausedPromptCandidate);
       if (pauseError?.code !== "run_state_conflict") throw pauseError;
     }
     const settlement = error?.details?.attachmentSettlement;

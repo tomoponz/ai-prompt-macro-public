@@ -50,6 +50,14 @@ function bootstrapReadFailureHarness() {
       storage: { local: { async get() { return {}; } } }
     },
     requireRuntimeCursorAuthority: () => true,
+    // No composer exists in this bootstrap-only fixture. Input ownership and
+    // complete prepared/confirmed recovery are exercised by the runner suites.
+    captureInitialPromptAppend: async () => {},
+    revokeInitialPromptAppend: () => {},
+    outboxMatchesCurrentPosition: async (run) => {
+      if (!run?.outbox?.id || !run.outbox.promptHash || !run.outbox.position) return false;
+      throw new Error("Use the full runner fixture to validate a complete outbox");
+    },
     currentStep: () => null,
     makeError: (code) => Object.assign(new Error(code), { code }),
     normalizeWorkflow: () => ({ schemaVersion: 1, plannedSends: 5, maxSends: 5, steps: [] }),

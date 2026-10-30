@@ -6,7 +6,6 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { parseBrowserProfile, scenarioGroupsForProfile } from "./browser-profiles.mjs";
 import { buildAipmFlowMetaPrompt } from "../src/flow-authoring.js";
-import { verifyNewChatProvenanceBoundary } from "./helpers/new-chat-provenance-browser.mjs";
 
 const TEST_TIMEOUT_MS = 25_000;
 const LONG_RUN_TIMEOUT_MS = 240_000;
@@ -434,6 +433,30 @@ async function fixtureSends(page) {
   return page.evaluate(() => JSON.parse(sessionStorage.getItem("aipm.fixture.sends") || "[]"));
 }
 
+async function assertScopedAttachmentCompleted(
+  page, worker, tabId, { prompt, repeat = 1, description, kind = "pasted-text",
+    timeoutMs = repeat === 1 ? TEST_TIMEOUT_MS : LONG_RUN_TIMEOUT_MS }
+) {
+  const runId = await eventually(`${description}: current Run starts`, async () => {
+    const run = await activeRunFor(worker, tabId);
+    assert.equal(typeof run?.runId, "string");
+    assert.equal(run?.conversationKey, fixtureConversationKey(page));
+    assert.equal(run?.workflow?.steps?.[0]?.prompt, prompt);
+    assert.equal(run?.workflow?.steps?.[0]?.repeat, repeat);
+    return run.runId;
+  });
+  // Completion requires the exact live Run, every recorded click, durable
+  // confirmed progress and a cleared outbox. Paused/ambiguous Runs are failures,
+  // not substitutes for the conditional attachment success contract.
+  const sends = await waitForLiveRunSendCount(page, worker, tabId, runId, repeat, timeoutMs);
+  assert.deepEqual(sends, Array(repeat).fill(prompt), description);
+  assert.deepEqual(await page.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
+    Array(repeat).fill(kind), "every iteration must actually use the converted attachment path");
+  assert.equal(await page.evaluate(() => globalThis.__AIPM_FIXTURE_ATTACHMENT_COUNT__()), 0,
+    "confirmed attachment delivery must leave no residual tile");
+  return Date.now();
+}
+
 async function configureC103LiveDepth(
   page,
   { tileDepth = 7, sendActionableDelayMs = 0, addPreExisting = false, buttonCount = 2 } = {}
@@ -810,6 +833,9 @@ async function confirmStartReadiness(sidePanel, page, tabId, phase) {
     assert.equal(observation.target?.status?.discoveryError, null);
   });
 
+  // Refresh the actual panel observation before clicking. Discovery alone does
+  // not update the conversation/document snapshot captured by production Start.
+  await sidePanel.locator("#refreshTabs").click();
   await eventually(`target tab ${tabId} remains selectable after current document discovery (${phase})`, async () => {
     assert.equal(await sidePanel.locator("#targetTab").inputValue(), String(tabId));
     assert.equal(await sidePanel.locator("#start").isEnabled(), true);
@@ -1889,8 +1915,11 @@ try {
     sessionStorage.removeItem("aipm.fixture.sends");
     globalThis.__AIPM_FIXTURE_ADD_ATTACHMENT__();
   });
-  await selectTarget(sidePanel, firstTabId);
-  await startQuickRun(sidePanel, { prompt: "C7 must not mix with an attachment", repeat: 1, delaySeconds: 0 });
+  // This case tests the attachment guard after a valid Start, not stale UI
+  // authority from the conversation used by the preceding scenario.
+  await selectReadyTarget(sidePanel, firstChat, firstTabId);
+  await startQuickRun(sidePanel, { prompt: "C7 must not mix with an attachment", repeat: 1, delaySeconds: 0 },
+    { page: firstChat, tabId: firstTabId });
   await eventually("C7 pre-existing attachment fail-closed", async () => {
     const run = await activeRunFor(worker, firstTabId);
     assert.equal(run?.status, "paused");
@@ -1905,7 +1934,8 @@ try {
   await eventually("C7 attachment-blocked Run stopped", async () => {
     assert.equal((await activeRunFor(worker, firstTabId))?.status, "stopped");
   });
-  await startQuickRun(sidePanel, { prompt: "C7 residual attachment fresh Run", repeat: 1, delaySeconds: 0 });
+  await startQuickRun(sidePanel, { prompt: "C7 residual attachment fresh Run", repeat: 1, delaySeconds: 0 },
+    { page: firstChat, tabId: firstTabId });
   await eventually("C7 residual attachment blocks a fresh Run", async () => {
     const run = await activeRunFor(worker, firstTabId);
     assert.equal(run?.status, "paused");
@@ -1924,15 +1954,12 @@ try {
     sessionStorage.removeItem("aipm.fixture.sends");
     globalThis.__AIPM_FIXTURE_CONVERT_NEXT_PASTE__ = true;
   });
-  await selectTarget(sidePanel, firstTabId);
-  await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 });
-  await eventually("C9 paste attachment delivery completes", async () => {
-    const run = await activeRunFor(worker, firstTabId);
-    assert.equal(run?.status, "completed");
+  await selectReadyTarget(sidePanel, firstChat, firstTabId);
+  await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 },
+    { page: firstChat, tabId: firstTabId });
+  await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+    prompt: c9LongPrompt, kind: "file-thumbnail", description: "C9 converted attachment completes"
   });
-  assert.deepEqual(await fixtureSends(firstChat), [c9LongPrompt]);
-    assert.equal(await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_ATTACHMENT_COUNT__()), 0,
-      "the sent paste attachment must not remain in the next composer");
 
     await firstChat.goto("https://chatgpt.com/c/c10-pre-live-minimal-residue-repeat-5");
     await firstChat.evaluate(() => {
@@ -1950,20 +1977,13 @@ try {
       { prompt: c9LongPrompt, repeat: 5, delaySeconds: 0 },
       { page: firstChat, tabId: firstTabId }
     );
-    await eventually("production adapter minimal-residue Repeat=5 completes", async () => {
-      const run = await activeRunFor(worker, firstTabId);
-      assert.equal(run?.status, "completed");
-      assert.equal(run?.cursor?.sendsCompleted, 5);
-    }, LONG_RUN_TIMEOUT_MS);
-    assert.deepEqual(await fixtureSends(firstChat), Array(5).fill(c9LongPrompt));
+    await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+      prompt: c9LongPrompt, repeat: 5, description: "production adapter minimal-residue Repeat=5 completes"
+    });
     assert.deepEqual(
       await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_CLEAR_READBACKS__),
       Array(5).fill("\n"),
       "two real empty ProseMirror paragraphs must read back as one newline after every Send"
-    );
-    assert.deepEqual(
-      await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
-      Array(5).fill("pasted-text")
     );
 
     for (const { label, prompt } of productionSizePrompts) {
@@ -1981,16 +2001,10 @@ try {
         { prompt, repeat: 1, delaySeconds: 0 },
         { page: firstChat, tabId: firstTabId }
       );
-      await eventually(`production adapter ${label} delivery completes`, async () => {
-        const run = await activeRunFor(worker, firstTabId);
-        assert.equal(run?.status, "completed");
-        assert.equal(run?.cursor?.sendsCompleted, 1);
-      }, LONG_RUN_TIMEOUT_MS);
-      assert.deepEqual(await fixtureSends(firstChat), [prompt]);
-      assert.deepEqual(
-        await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
-        ["pasted-text"]
-      );
+      await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+        prompt, description: `production adapter ${label} converted attachment completes`,
+        timeoutMs: LONG_RUN_TIMEOUT_MS
+      });
     }
   }
 
@@ -2001,15 +2015,12 @@ try {
       sessionStorage.removeItem("aipm.fixture.sends");
       globalThis.__AIPM_FIXTURE_CONVERT_ALL_PASTES__ = true;
     });
-    await selectTarget(sidePanel, firstTabId);
-    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 });
-    const c9RunId = await eventually(`C9 attachment Repeat=${repeat} Run starts`, async () => {
-      const runId = (await activeRunFor(worker, firstTabId))?.runId;
-      assert.equal(typeof runId, "string");
-      return runId;
+    await selectReadyTarget(sidePanel, firstChat, firstTabId);
+    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 },
+      { page: firstChat, tabId: firstTabId });
+    await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+      prompt: c9LongPrompt, repeat, kind: "file-thumbnail", description: `C9 attachment Repeat=${repeat} completes`
     });
-    await waitForLiveRunSendCount(firstChat, worker, firstTabId, c9RunId, repeat, LONG_RUN_TIMEOUT_MS);
-    assert.deepEqual(await fixtureSends(firstChat), Array(repeat).fill(c9LongPrompt));
   }
 
   for (const repeat of [1, 5, 20, 40]) {
@@ -2021,19 +2032,12 @@ try {
       globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT_REPLACE_MS__ = 80;
       globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__ = [];
     });
-    await selectTarget(sidePanel, firstTabId);
-    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 });
-    await eventually(`C10 live pasted-text Repeat=${repeat} completes`, async () => {
-      const run = await activeRunFor(worker, firstTabId);
-      assert.equal(run?.status, "completed");
-      assert.equal(run?.cursor?.sendsCompleted, repeat);
-    }, repeat === 1 ? TEST_TIMEOUT_MS : LONG_RUN_TIMEOUT_MS);
-    assert.deepEqual(await fixtureSends(firstChat), Array(repeat).fill(c9LongPrompt));
-    assert.deepEqual(
-      await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
-      Array(repeat).fill("pasted-text"),
-      "every live-like delivery must settle as pasted-text instead of premature TEXT mode"
-    );
+    await selectReadyTarget(sidePanel, firstChat, firstTabId);
+    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 },
+      { page: firstChat, tabId: firstTabId });
+    await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+      prompt: c9LongPrompt, repeat, description: `C10 live pasted-text Repeat=${repeat} completes`
+    });
   }
 
   for (const repeat of [1, 5, 20, 40]) {
@@ -2050,24 +2054,9 @@ try {
     });
     await selectReadyTarget(sidePanel, firstChat, firstTabId);
     await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 }, { page: firstChat, tabId: firstTabId });
-    const c102RunId = await eventually(`C10.2 fallback Repeat=${repeat} Run starts`, async () => {
-      const runId = (await activeRunFor(worker, firstTabId))?.runId;
-      assert.equal(typeof runId, "string");
-      return runId;
+    await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+      prompt: c9LongPrompt, repeat, description: `C10.2 fallback Repeat=${repeat} completes`
     });
-    await waitForLiveRunSendCount(
-      firstChat,
-      worker,
-      firstTabId,
-      c102RunId,
-      repeat,
-      repeat === 1 ? TEST_TIMEOUT_MS : LONG_RUN_TIMEOUT_MS
-    );
-    assert.deepEqual(await fixtureSends(firstChat), Array(repeat).fill(c9LongPrompt));
-    assert.deepEqual(
-      await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
-      Array(repeat).fill("pasted-text")
-    );
   }
 
   for (const repeat of [1, 5, 20, 40]) {
@@ -2075,49 +2064,20 @@ try {
     await configureC103LiveDepth(firstChat, { tileDepth: 7 });
     await selectReadyTarget(sidePanel, firstChat, firstTabId);
     await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 }, { page: firstChat, tabId: firstTabId });
-    const runId = await eventually(`C10.3 depth 7 Repeat=${repeat} Run starts`, async () => {
-      const active = await activeRunFor(worker, firstTabId);
-      assert.equal(typeof active?.runId, "string");
-      return active.runId;
+    await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+      prompt: c9LongPrompt, repeat, description: `C10.3 depth 7 Repeat=${repeat} completes`
     });
-    await waitForLiveRunSendCount(
-      firstChat,
-      worker,
-      firstTabId,
-      runId,
-      repeat,
-      repeat === 1 ? TEST_TIMEOUT_MS : LONG_RUN_TIMEOUT_MS
-    );
-    assert.deepEqual(await fixtureSends(firstChat), Array(repeat).fill(c9LongPrompt));
-    assert.deepEqual(
-      await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
-      Array(repeat).fill("pasted-text")
-    );
   }
 
     for (const repeat of [1, 3, 20]) {
     await firstChat.goto(`https://chatgpt.com/c/c10-4-live-three-button-${repeat}`);
     await configureC103LiveDepth(firstChat, { tileDepth: 7, buttonCount: 3 });
-    await selectTarget(sidePanel, firstTabId);
-    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 });
-    const runId = await eventually(`C10.4 three-button Repeat=${repeat} Run starts`, async () => {
-      const active = await activeRunFor(worker, firstTabId);
-      assert.equal(typeof active?.runId, "string");
-      return active.runId;
+    await selectReadyTarget(sidePanel, firstChat, firstTabId);
+    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat, delaySeconds: 0 },
+      { page: firstChat, tabId: firstTabId });
+    await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+      prompt: c9LongPrompt, repeat, description: `C10.4 three-button Repeat=${repeat} completes`
     });
-    await waitForLiveRunSendCount(
-      firstChat,
-      worker,
-      firstTabId,
-      runId,
-      repeat,
-      repeat === 1 ? TEST_TIMEOUT_MS : LONG_RUN_TIMEOUT_MS
-    );
-    assert.deepEqual(await fixtureSends(firstChat), Array(repeat).fill(c9LongPrompt));
-    assert.deepEqual(
-      await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
-      Array(repeat).fill("pasted-text")
-    );
     }
   }
 
@@ -2135,12 +2095,9 @@ try {
       await configureC103LiveDepth(firstChat, { tileDepth: depth });
       await selectReadyTarget(sidePanel, firstChat, firstTabId);
       await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 }, { page: firstChat, tabId: firstTabId });
-      await eventually(`C10.3 depth ${depth} boundary completes`, async () => {
-        const run = await activeRunFor(worker, firstTabId);
-        assert.equal(run?.status, "completed");
-        assert.equal(run?.cursor?.sendsCompleted, 1);
-      }, TEST_TIMEOUT_MS);
-      assert.deepEqual(await fixtureSends(firstChat), [c9LongPrompt]);
+      await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+        prompt: c9LongPrompt, description: `C10.3 depth ${depth} recognized attachment completes`
+      });
     }
 
     await firstChat.goto("https://chatgpt.com/c/c10-3-depth-9-rejected");
@@ -2175,12 +2132,9 @@ try {
       [...(globalThis.__AIPM_FIXTURE_SEND_ACTIONABILITY_EVENTS__ ?? [])]);
     assert.equal(events[0], "forced-disabled:true");
   });
-  await eventually("C10.3 initially disabled Send becomes actionable exactly once", async () => {
-    const run = await activeRunFor(worker, firstTabId);
-    assert.equal(run?.status, "completed");
-    assert.equal(run?.cursor?.sendsCompleted, 1);
-  }, TEST_TIMEOUT_MS);
-  assert.deepEqual(await fixtureSends(firstChat), [c9LongPrompt]);
+  await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+    prompt: c9LongPrompt, description: "C10.3 initially disabled Send becomes actionable exactly once"
+  });
   assert.deepEqual(
     await firstChat.evaluate(() => [...globalThis.__AIPM_FIXTURE_SEND_ACTIONABILITY_EVENTS__]),
     ["forced-disabled:true", "forced-disabled:false", "send-click"],
@@ -2342,11 +2296,9 @@ try {
   let c102IdentityFailures = 0;
   try {
     await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 }, { page: firstChat, tabId: firstTabId });
-    await eventually("C10.2 fallback survives bounded identity recovery", async () => {
-      const run = await activeRunFor(worker, firstTabId);
-      assert.equal(run?.status, "completed");
-      assert.equal(run?.cursor?.sendsCompleted, 1);
-    }, TEST_TIMEOUT_MS);
+    await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+      prompt: c9LongPrompt, description: "C10.2 fallback survives bounded identity recovery"
+    });
   } finally {
     c102IdentityFailures = await worker.evaluate(() => {
       const state = globalThis.__AIPM_C102_PROBE__;
@@ -2369,14 +2321,15 @@ try {
     globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT_DELAY_MS__ = 5_000;
     globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT_REPLACE_MS__ = 80;
   });
-  await selectTarget(sidePanel, firstTabId);
+  await selectReadyTarget(sidePanel, firstChat, firstTabId);
   const delayedFiveStartedAt = Date.now();
-  await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 });
-  await eventually("C10.1 5-second delayed conversion completes early", async () => {
-    assert.equal((await activeRunFor(worker, firstTabId))?.status, "completed");
-  }, TEST_TIMEOUT_MS);
-  assert.deepEqual(await fixtureSends(firstChat), [c9LongPrompt]);
-  assert.ok(Date.now() - delayedFiveStartedAt < 15_000, "the 5-second case must not wait for the 30-second maximum");
+  await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 },
+    { page: firstChat, tabId: firstTabId });
+  const delayedFiveCompletedAt = await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+    prompt: c9LongPrompt, description: "C10.1 5-second delayed conversion completes early"
+  });
+  assert.ok(delayedFiveCompletedAt - delayedFiveStartedAt < 15_000,
+    "the 5-second case must not wait for the 30-second maximum");
 
   await firstChat.goto("https://chatgpt.com/c/c10-1-delayed-20-seconds");
   await firstChat.evaluate(() => {
@@ -2386,14 +2339,13 @@ try {
     globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT_REPLACE_MS__ = 10_000;
     globalThis.__AIPM_FIXTURE_LIVE_TEMPORARY_UNRECOGNIZED__ = true;
   });
-  await selectTarget(sidePanel, firstTabId);
-  await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 });
-  await eventually("C10.1 production-like 20-second temporary-to-final conversion completes", async () => {
-    const run = await activeRunFor(worker, firstTabId);
-    assert.equal(run?.status, "completed");
-    assert.equal(run?.cursor?.sendsCompleted, 1);
-  }, LONG_RUN_TIMEOUT_MS);
-  assert.deepEqual(await fixtureSends(firstChat), [c9LongPrompt]);
+  await selectReadyTarget(sidePanel, firstChat, firstTabId);
+  await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 },
+    { page: firstChat, tabId: firstTabId });
+  await assertScopedAttachmentCompleted(firstChat, worker, firstTabId, {
+    prompt: c9LongPrompt, description: "C10.1 20-second temporary-to-final conversion completes",
+    timeoutMs: LONG_RUN_TIMEOUT_MS
+  });
 
   await firstChat.goto("https://chatgpt.com/c/c10-1-bounded-timeout");
   await firstChat.evaluate(() => {
@@ -2517,8 +2469,8 @@ try {
   const pasteCountBeforeRace = await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_PROSEMIRROR__.pasteEvents);
   await firstChat.evaluate(() => {
     sessionStorage.removeItem("aipm.fixture.sends");
-    globalThis.__AIPM_FIXTURE_CONVERT_NEXT_PASTE__ = true;
-    globalThis.__AIPM_FIXTURE_PAUSE_AFTER_CONVERSION_MS__ = 600;
+    globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT__ = true;
+    globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT_DELAY_MS__ = 5_000;
   });
   const composerBox = await firstChat.locator("#prompt-textarea").boundingBox();
   assert.ok(composerBox, "the C9 trusted-interaction fixture composer must be visible");
@@ -2529,9 +2481,8 @@ try {
     pasteCountBeforeRace,
     { polling: "raf", timeout: TEST_TIMEOUT_MS }
   );
-  // Use a low-latency CDP mouse input. Locator actionability polling can consume
-  // the entire 120ms post-paste verification window and make this race fixture
-  // observe completion instead of the intended trusted user event.
+  // Deliver trusted input while conversion is still pending, before a ready
+  // attachment could authorize the single provider click.
   await firstChat.mouse.click(
     composerBox.x + composerBox.width / 2,
     composerBox.y + composerBox.height / 2
@@ -2552,10 +2503,10 @@ try {
   const pasteCountBeforeStop = await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_PROSEMIRROR__.pasteEvents);
   await firstChat.evaluate(() => {
     sessionStorage.removeItem("aipm.fixture.sends");
-    globalThis.__AIPM_FIXTURE_CONVERT_NEXT_PASTE__ = true;
-    // Keep a deterministic browser-scheduling window after the observed paste so
-    // the Stop click lands before the fixture can expose an actionable Send.
-    globalThis.__AIPM_FIXTURE_PAUSE_AFTER_CONVERSION_MS__ = 2_000;
+    // Keep conversion pending so this case exercises explicit Stop before the
+    // attachment becomes ready for the single provider click.
+    globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT__ = true;
+    globalThis.__AIPM_FIXTURE_LIVE_PASTED_TEXT_DELAY_MS__ = 5_000;
   });
   await selectTarget(sidePanel, firstTabId);
   const stopRaceStart = startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 1, delaySeconds: 0 });
@@ -2617,7 +2568,7 @@ try {
     sessionStorage.removeItem("aipm.fixture.sends");
     globalThis.__AIPM_FIXTURE_CONVERT_ALL_PASTES__ = true;
   });
-  await selectTarget(sidePanel, firstTabId);
+  await selectReadyTarget(sidePanel, firstChat, firstTabId);
   await worker.evaluate((targetTabId) => {
     const original = chrome.scripting.executeScript;
     globalThis.__AIPM_ISSUE23_PROBE_STATS__ = { calls: 0, failures: 0, failedAt: [], targetTabId, original };
@@ -2638,7 +2589,8 @@ try {
   }, firstTabId);
 
   try {
-    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 40, delaySeconds: 0 });
+    await startQuickRun(sidePanel, { prompt: c9LongPrompt, repeat: 40, delaySeconds: 0 },
+      { page: firstChat, tabId: firstTabId });
     await waitForSendCount(firstChat, 1);
     const issue23RunId = (await activeRunFor(worker, firstTabId))?.runId;
     assert.equal(typeof issue23RunId, "string");
@@ -2652,6 +2604,9 @@ try {
     );
     assert.equal(fortySends.length, 40, "Repeat=40 must produce exactly 40 sends");
     assert.ok(fortySends.every((prompt) => prompt === c9LongPrompt));
+    assert.deepEqual(await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_LAST_SEND_ATTACHMENT_KIND__),
+      Array(40).fill("file-thumbnail"), "identity recovery must preserve converted attachment delivery");
+    assert.equal(await firstChat.evaluate(() => globalThis.__AIPM_FIXTURE_ATTACHMENT_COUNT__()), 0);
     assert.deepEqual(await fixtureSends(secondChat), [], "the non-target conversation must receive zero sends");
     await eventually("Issue 23 Repeat=40 completion", async () => {
       const run = await activeRunFor(worker, firstTabId);
@@ -2789,38 +2744,56 @@ try {
     assert.equal((await activeRunFor(worker, firstTabId))?.status, "stopped");
   });
 
-  await secondChat.goto("https://chatgpt.com/");
-  await secondChat.evaluate(() => sessionStorage.removeItem("aipm.fixture.sends"));
-  await selectTarget(sidePanel, secondTabId);
-  await startQuickRun(sidePanel, { prompt: "New Chat explicit Resume", repeat: 2, delaySeconds: 0 });
-  await waitForSendCount(secondChat, 1);
-  await eventually("New Chat confirmation-required pause", async () => {
-    assert.equal(await sidePanel.locator("#resume").isEnabled(), true);
-    assert.match(await sidePanel.locator("#statusBadge").innerText(), /確認|一時停止/);
-  });
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  assert.equal((await fixtureSends(secondChat)).length, 1, "New Chat must not auto-migrate and send again");
-  await sidePanel.locator("#resume").click();
-  await waitForSendCount(secondChat, 2);
-  await eventually("explicitly resumed New Chat completion", async () => {
-    assert.match(await sidePanel.locator("#statusBadge").innerText(), /完了/);
-  });
-
-  await verifyNewChatProvenanceBoundary({
-    chat: secondChat, worker, tabId: secondTabId,
-    start: async () => {
-      await selectTarget(sidePanel, secondTabId);
-      await startQuickRun(sidePanel, { prompt: "Provenance boundary fixture", repeat: 3, delaySeconds: 0 });
-    },
-    waitForSend: () => waitForSendCount(secondChat, 1),
-    readRun: () => activeRunFor(worker, secondTabId),
-    stop: async () => {
-      await sidePanel.locator("#stop").click();
-      await eventually("provenance fixture Run stopped", async () => {
-        assert.equal((await activeRunFor(worker, secondTabId)).status, "stopped");
-      });
-    }
-  });
+  // New Runs cannot use the legacy first-click/Resume path. A fixture user sends
+  // the real first instruction before APM receives Start authority.
+  for (const project of [false, true]) {
+    await secondChat.goto(project ? "https://chatgpt.com/g/g-p-manual/project" : "https://chatgpt.com/");
+    await secondChat.evaluate((isProject) => {
+      sessionStorage.removeItem("aipm.fixture.sends");
+      if (isProject) document.querySelector("[data-testid='send-button']").addEventListener("click", () => {
+        history.replaceState({}, "", "/g/g-p-manual/c/manual-project-conversation");
+      }, { once: true });
+    }, project);
+    await sidePanel.locator("#refreshTabs").click();
+    await sidePanel.locator("#targetTab").selectOption(String(secondTabId));
+    await configureQuickRun(sidePanel, { prompt: "APM remaining instruction", repeat: 2, delaySeconds: 0 });
+    await eventually("New Chat requires a manually established conversation", async () => {
+      assert.equal(await sidePanel.locator("#start").isEnabled(), false);
+      assert.equal(await sidePanel.locator("#flowStart").isEnabled(), false);
+      assert.match(await sidePanel.locator("#flowStartReason").innerText(), /最初の指示.*手動/);
+      assert.equal(await sidePanel.locator("#runDetails").isVisible(), true);
+      assert.match(await sidePanel.locator("#nextAction").innerText(), /重複/);
+    });
+    assert.equal((await fixtureSends(secondChat)).length, 0);
+    // Commit the manual draft through the fixture's ProseMirror transaction path.
+    await secondChat.locator("#prompt-textarea").evaluate((composer, text) => {
+      const paragraph = document.createElement("p");
+      paragraph.setAttribute("data-pm-slice", "0 0 []");
+      paragraph.textContent = text;
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", text);
+      clipboardData.setData("text/html", paragraph.outerHTML);
+      composer.dispatchEvent(new ClipboardEvent("paste", {
+        bubbles: true, cancelable: true, clipboardData
+      }));
+    }, "Manual initial instruction");
+    await secondChat.locator("[data-testid='send-button']").click();
+    await waitForSendCount(secondChat, 1);
+    await eventually("manual first instruction enables canonical Start", async () => {
+      assert.equal(await sidePanel.locator("#start").isEnabled(), true);
+    });
+    assert.equal(await sidePanel.locator("#quickRepeat").inputValue(), "2", "APM does not subtract the manual send");
+    await clickStartOnly(sidePanel);
+    const sends = await waitForSendCount(secondChat, 3);
+    assert.deepEqual(sends, ["Manual initial instruction", "APM remaining instruction", "APM remaining instruction"]);
+    await eventually("remaining APM workflow completes", async () => {
+      const run = await activeRunFor(worker, secondTabId);
+      assert.equal(run?.status, "completed");
+      assert.equal(run?.cursor?.sendsCompleted, 2);
+    });
+  }
+  // Ambiguous post-send route evidence and legacy Resume remain characterized
+  // by the standalone provenance and new-chat-resume-progress suites.
 
   await firstChat.goto("https://chatgpt.com/c/navigation-start");
   await firstChat.evaluate(() => sessionStorage.removeItem("aipm.fixture.sends"));
