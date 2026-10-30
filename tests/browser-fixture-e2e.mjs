@@ -2765,7 +2765,18 @@ try {
       assert.match(await sidePanel.locator("#nextAction").innerText(), /重複/);
     });
     assert.equal((await fixtureSends(secondChat)).length, 0);
-    await secondChat.locator("#prompt-textarea").fill("Manual initial instruction");
+    // Commit the manual draft through the fixture's ProseMirror transaction path.
+    await secondChat.locator("#prompt-textarea").evaluate((composer, text) => {
+      const paragraph = document.createElement("p");
+      paragraph.setAttribute("data-pm-slice", "0 0 []");
+      paragraph.textContent = text;
+      const clipboardData = new DataTransfer();
+      clipboardData.setData("text/plain", text);
+      clipboardData.setData("text/html", paragraph.outerHTML);
+      composer.dispatchEvent(new ClipboardEvent("paste", {
+        bubbles: true, cancelable: true, clipboardData
+      }));
+    }, "Manual initial instruction");
     await secondChat.locator("[data-testid='send-button']").click();
     await waitForSendCount(secondChat, 1);
     await eventually("manual first instruction enables canonical Start", async () => {
