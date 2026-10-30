@@ -5864,8 +5864,9 @@ color: #202022;
   background: var(--state-completed-bg); color: var(--state-completed-fg); border-color: var(--state-completed-line);
 }
 
-/* Every source theme keeps danger actionable and visually distinct. */
-:root:not([data-aipm-theme="default"]):not([data-aipm-theme="eva-restrained"]) :is(button.danger,.danger-action) {
+/* Most source themes use red danger ink. These three filled-button themes
+   already use red danger fills: retain their white text, not red on red. */
+:root:not([data-aipm-theme="default"]):not([data-aipm-theme="eva-restrained"]):not([data-aipm-theme="brutalist-utility"]):not([data-aipm-theme="industrial-control"]):not([data-aipm-theme="swiss-information"]) :is(button.danger,.danger-action) {
   color: var(--aipm-status-stop);
   border-color: var(--aipm-status-stop);
 }

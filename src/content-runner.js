@@ -820,13 +820,22 @@ function sameRunWorkflowAndCursorAuthority(run, latest) {
   return sameJsonAuthorityValue(latest?.waitState ?? null, run?.waitState ?? null);
 }
 
-async function failClosedRunWithoutIdentity(runId = null, reason = null) {
+async function failClosedRunWithoutIdentity(runOrId = null, reason = null, identityFailure = null) {
+  const identityReason = ["document_identity_unconfirmed", "document_identity_mismatch"].includes(reason);
+  const runId = typeof runOrId === "string" ? runOrId : runOrId?.runId;
+  const guard = identityReason
+    ? identityFailure?.identityFailClosedGuard
+    : (runOrId && typeof runOrId === "object" ? runFailClosedGuards.get(runOrId)?.guard : null);
+  // Refusals must retain their own authority. Never substitute a cached/newer Run
+  // after a handled/stale reply or an identity failure with no issued capability.
+  if (identityFailure?.identityFailClosedHandled === true ||
+      !guard || typeof guard.token !== "string" || guard.token.length === 0) return null;
   const response = await chrome.runtime.sendMessage({
     type: "AIPM_RUN_FAIL_CLOSED",
     expectedRunId: typeof runId === "string" ? runId : null,
-    reason: ["document_identity_unconfirmed", "document_identity_mismatch"].includes(reason)
-      ? reason
-      : null,
+    reason: identityReason ? reason : null,
+    failClosedGuard: guard,
+    documentInstanceId: instanceId,
     serviceWorkerVersion: globalThis.__AIPM_CONTENT_CORE__?.version ?? null
   });
   if (!response?.ok) {
@@ -846,7 +855,7 @@ async function requireNewChatConfirmation(run) {
   });
   if (!response?.ok || response.run?.status !== "paused" ||
       response.run?.pauseReason !== "new-chat-confirmation-required") {
-    await failClosedRunWithoutIdentity(run.runId).catch(() => {});
+    await failClosedRunWithoutIdentity(run).catch(() => {});
     const error = new Error(response?.error ?? "New Chat confirmation state could not be saved.");
     error.code = "run_state_save_failed";
     throw error;
@@ -899,6 +908,7 @@ async function assertRunCanContinue(
         requireObservedRunCanContinue(run, authoritative);
         if (authoritative.status !== "running") continue;
         Object.assign(run, authoritative);
+        inheritRunFailClosedGuard(run, authoritative);
         return;
       }
     }
@@ -926,6 +936,7 @@ async function assertRunCanContinue(
   if (recoveredIdentity && Number(latest.stateRevision) !== Number(run.stateRevision)) {
     throw makeError("run_state_conflict");
   }
+  inheritRunFailClosedGuard(run, latest);
 }
 
 async function waitForReadyStability(run, token, lease = null) {
@@ -1412,7 +1423,7 @@ async function executeRun(run, token, initialLease = null, pausedPrompt = null) 
       // Explicit Resume of a confirmed delivery observes readiness only. The
       // confirmed position never re-enters writePrompt or the Send boundary.
       if (!(await confirmedOutboxMatchesCurrentPosition(run))) throw makeError("recovery_ambiguous");
-      lease = await acquireLease(run.conversationKey, run.runId, run.executionSessionId, run.workflow?.recovery);
+      lease = await acquireLease(run.conversationKey, run.runId, run.executionSessionId, run.workflow?.recovery, run);
       if (!lease) throw makeError("lease_conflict");
       await waitForReadyStability(run, token, lease);
       const sentStep = currentStep(run);
@@ -1470,7 +1481,7 @@ async function executeRun(run, token, initialLease = null, pausedPrompt = null) 
       }
 
       if (!lease) {
-        lease = await acquireLease(run.conversationKey, run.runId, run.executionSessionId, run.workflow?.recovery);
+        lease = await acquireLease(run.conversationKey, run.runId, run.executionSessionId, run.workflow?.recovery, run);
         if (!lease) throw makeError("lease_conflict");
       }
       if (!(await renewLease(lease, run.runId))) throw makeError("lease_conflict");
@@ -1538,7 +1549,7 @@ async function executeRun(run, token, initialLease = null, pausedPrompt = null) 
     }
 
     if (code === "document_identity_unconfirmed") {
-      const stopped = await failClosedRunWithoutIdentity(run.runId, code).catch(() => null);
+      const stopped = await failClosedRunWithoutIdentity(run.runId, code, error).catch(() => null);
       if (stopped && typeof recordDocumentIdentityFailureDiagnostic === "function") {
         recordDocumentIdentityFailureDiagnostic(error, stopped);
       }
@@ -1546,12 +1557,12 @@ async function executeRun(run, token, initialLease = null, pausedPrompt = null) 
     }
 
     if (code === "document_identity_mismatch") {
-      await failClosedRunWithoutIdentity(run.runId, code).catch(() => {});
+      await failClosedRunWithoutIdentity(run.runId, code, error).catch(() => {});
       return;
     }
 
     if (code === "conversation_identity_unknown" || code === "conversation_changed") {
-      await failClosedRunWithoutIdentity(run.runId).catch(() => {});
+      await failClosedRunWithoutIdentity(run).catch(() => {});
       return;
     }
 

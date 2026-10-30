@@ -31,11 +31,15 @@ function appendPostCommitDiagnostic(type, meta = {}) {
   return true;
 }
 `;
-const source = `${postCommitDiagnosticHarness}\n${fs.readFileSync(
+const coreSource = fs.readFileSync(new URL("../src/content-core.js", import.meta.url), "utf8");
+// Use the production capability helpers even in this controller-only fixture;
+// no Run properties or persistent fake tokens stand in for its WeakMap.
+const guardHelpers = coreSource.slice(coreSource.indexOf("function copyIdentityFailClosedContext("),
+  coreSource.indexOf("function throwDocumentIdentityFailure("));
+const source = `${postCommitDiagnosticHarness}\nvar runFailClosedGuards = new WeakMap();\n${guardHelpers}\n${fs.readFileSync(
   new URL("../src/content-controller.js", import.meta.url),
   "utf8"
 )}`;
-const coreSource = fs.readFileSync(new URL("../src/content-core.js", import.meta.url), "utf8");
 
 function controllerHarness() {
   const listeners = [];
@@ -372,6 +376,9 @@ test("exhausted identity probes during initial recovery durably stop the exact R
   const failClosedCalls = [];
   let runGetCount = 0;
   let executeCount = 0;
+  const stopGuard = { token: "synthetic-lifecycle-stop", runId: "durable-run-needing-stop", stateRevision: 1,
+    executionSessionId: "session-test", conversationKey: "chatgpt:c:test",
+    boundDocumentId: "synthetic-document", documentInstanceId: "instance-test" };
   const context = vm.createContext({
     console,
     setTimeout,
@@ -386,7 +393,8 @@ test("exhausted identity probes during initial recovery durably stop the exact R
       id: "chatgpt",
       getConversationKey: () => "chatgpt:c:test"
     },
-    async failClosedRunWithoutIdentity(runId, reason) {
+    async failClosedRunWithoutIdentity(runId, reason, error) {
+      assert.deepEqual(structuredClone(error.identityFailClosedGuard), stopGuard);
       failClosedCalls.push({ runId, reason });
       return { runId, status: "paused", phase: "ambiguous", resumable: false };
     },
@@ -400,6 +408,7 @@ test("exhausted identity probes during initial recovery durably stop the exact R
                 ok: false,
                 errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
                 runId: "durable-run-needing-stop",
+                failClosedGuard: structuredClone(stopGuard),
                 error: "identity probes exhausted"
               };
             }

@@ -818,6 +818,57 @@ export function createWorkflowHarness(options = {}) {
     }
   });
 
+  // Model the stop-only protocol at the fake browser boundary. The actual
+  // background's claims, expiry/replay and sender checks are independently
+  // exercised by stale-identity-recovery-bridge/background protocol suites.
+  const stopClaims = new Map();
+  let stopClaimSequence = 0;
+  const stopSnapshot = (run) => Object.fromEntries(
+    ["runId", "stateRevision", "executionSessionId", "conversationKey", "boundDocumentId", "documentInstanceId"]
+      .map((key) => [key, run?.[key]])
+  );
+  const sameStopSnapshot = (a, b) => JSON.stringify(stopSnapshot(a)) === JSON.stringify(stopSnapshot(b));
+  const rawSendMessage = context.chrome.runtime.sendMessage;
+  function validStopClaim(guard, message, run) {
+    const claim = stopClaims.get(guard?.token);
+    return claim && JSON.stringify(claim.guard) === JSON.stringify(guard) &&
+      claim.expiresAt > clock && claim.instanceId === message.documentInstanceId &&
+      sameStopSnapshot(claim.snapshot, run) ? claim : null;
+  }
+  context.chrome.runtime.sendMessage = async (message) => {
+    const before = clone(storedRun);
+    if (message.type === "AIPM_RUN_FAIL_CLOSED") {
+      if (!validStopClaim(message.failClosedGuard, message, before)) {
+        return { ok: true, run: null, changed: false, staleFailClosedGuard: true };
+      }
+      stopClaims.delete(message.failClosedGuard.token);
+      return rawSendMessage(message);
+    }
+    const incomingLeaseClaim = message.type.startsWith("AIPM_LEASE_")
+      ? validStopClaim(message.failClosedGuard, message, before) : null;
+    const response = await rawSendMessage(message);
+    const identityFailure = ["DOCUMENT_IDENTITY_UNCONFIRMED", "DOCUMENT_IDENTITY_MISMATCH"].includes(response?.errorCode) ||
+      response?.identityObservation?.outcome === "mismatch";
+    const successRun = response?.ok && ["AIPM_RUN_GET", "AIPM_RUN_SET"].includes(message.type) ? response.run : null;
+    const successLease = response?.ok && incomingLeaseClaim && message.type.startsWith("AIPM_LEASE_");
+    const refusedSnapshot = identityFailure &&
+      (message.type === "AIPM_RUN_GET" ||
+       (message.type === "AIPM_RUN_SET" && sameStopSnapshot(message.run, before)) || incomingLeaseClaim)
+      ? before : null;
+    const snapshot = successRun || (successLease ? before : refusedSnapshot);
+    const explicitlyAbsent = Object.hasOwn(response ?? {}, "failClosedGuard") && !response.failClosedGuard;
+    if (snapshot && sameStopSnapshot(snapshot, storedRun) && !explicitlyAbsent &&
+        !response.failClosedAuthorityUnavailable && !response.lifecycleContextStale && !response.mismatchContextStale &&
+        !response.lifecycleCommitted && !response.mismatchCommitted) {
+      const guard = response.failClosedGuard ?? { ...stopSnapshot(snapshot), token: `fixture-stop-${++stopClaimSequence}` };
+      stopClaims.set(guard.token, { guard: clone(guard), snapshot: stopSnapshot(snapshot),
+        instanceId: message.documentInstanceId, expiresAt: clock + 60_000 });
+      while (stopClaims.size > 128) stopClaims.delete(stopClaims.keys().next().value);
+      return { ...response, failClosedGuard: clone(guard) };
+    }
+    return response;
+  };
+
   function leaseOperation(message) {
     switch (message.type) {
       case "AIPM_LEASE_ACQUIRE": {

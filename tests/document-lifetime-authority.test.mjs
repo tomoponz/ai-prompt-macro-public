@@ -327,8 +327,13 @@ test("document grant 10: navigation during an awaited Run write revokes the cach
 
   const blockedRead = deferred();
   let readBlocked = false;
+  let runReads = 0;
   harness.setStorageGetFault(async (key) => {
     if (key !== activeRunKey(fixture.tabId) || readBlocked) return;
+    // SET first captures the refusal's original snapshot, then proves identity.
+    // Hold the subsequent CAS read so navigation still occurs after that proof.
+    runReads += 1;
+    if (runReads !== 2) return;
     readBlocked = true;
     await blockedRead.promise;
   });

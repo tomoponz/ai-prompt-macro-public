@@ -17,6 +17,7 @@ function createHarness(options = {}) {
   const failDiagnosticTypes = new Set(options.failDiagnosticTypes ?? []);
   const neverSettleDiagnosticTypes = new Set(options.neverSettleDiagnosticTypes ?? []);
   let storedRun = clone(options.initialRun ?? null);
+  let identityStopClaim = null;
   let diagnostics = [];
   let clock = 1_000_000;
   let generationEndsAt = -1;
@@ -100,10 +101,16 @@ function createHarness(options = {}) {
                 return new Promise(() => {});
               }
               if (options.identityFailureOnRunSet?.(message.run) === true) {
+                identityStopClaim = {
+                  token: "synthetic-certainty-claim", ...Object.fromEntries(
+                    ["runId", "stateRevision", "executionSessionId", "conversationKey", "boundDocumentId", "documentInstanceId"]
+                      .map((key) => [key, storedRun?.[key]]))
+                };
                 return {
                   ok: false,
                   errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
                   error: "safe identity failure",
+                  failClosedGuard: clone(identityStopClaim),
                   identityObservation: {
                     outcome: "unavailable",
                     reason: "timeout",
@@ -140,6 +147,12 @@ function createHarness(options = {}) {
             case "AIPM_LEASE_RELEASE":
               return { ok: true };
             case "AIPM_RUN_FAIL_CLOSED":
+              if (!identityStopClaim || JSON.stringify(message.failClosedGuard) !== JSON.stringify(identityStopClaim) ||
+                  message.documentInstanceId !== context.instanceId ||
+                  Object.entries(identityStopClaim).some(([key, value]) => key !== "token" && storedRun?.[key] !== value)) {
+                return { ok: true, run: null, changed: false };
+              }
+              identityStopClaim = null;
               if (storedRun?.runId !== message.expectedRunId) {
                 return { ok: false, error: "stale Run" };
               }
@@ -528,7 +541,7 @@ test("C2 I9: identity diagnostic rejection cannot alter the durable fail-closed 
     phase: "ambiguous",
     reason: "timeout",
     status: "paused",
-    boundary: "run-read",
+    boundary: "run-save",
     episodeId: "identity-unknown",
     outcome: "unavailable",
     attempt: 3,

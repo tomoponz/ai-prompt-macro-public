@@ -22,7 +22,14 @@ const runnerSource = `${postCommitDiagnosticHarness}\n${fs.readFileSync(
   new URL("../src/content-runner.js", import.meta.url),
   "utf8"
 )}`;
-const controllerSource = fs.readFileSync(new URL("../src/content-controller.js", import.meta.url), "utf8");
+const coreSource = fs.readFileSync(new URL("../src/content-core.js", import.meta.url), "utf8");
+// These isolated fixtures load the production stop-capability helpers without
+// the DOM adapter. No guard is fabricated or automatically accepted here.
+const guardHelpers = coreSource.slice(coreSource.indexOf("function copyIdentityFailClosedContext("),
+  coreSource.indexOf("function throwDocumentIdentityFailure("));
+const controllerSource = `var runFailClosedGuards = new WeakMap();\n${guardHelpers}\n${fs.readFileSync(
+  new URL("../src/content-controller.js", import.meta.url), "utf8"
+)}`;
 
 const clone = (value) => (value == null ? value : JSON.parse(JSON.stringify(value)));
 
