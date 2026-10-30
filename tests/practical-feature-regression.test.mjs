@@ -15,9 +15,9 @@ const controller = read("../src/content-controller.js");
 const runner = read("../src/content-runner.js");
 const workflow = read("../src/workflow.js");
 
-test("FR1: published r2 keeps version fencing, the exact content-script chain and narrow authority", () => {
-  assert.equal(manifest.version, "0.4.3");
-  assert.equal(manifest.version_name, "0.4.3 r2");
+test("FR1: 0.4.4 keeps version fencing, the exact content-script chain and narrow authority", () => {
+  assert.equal(manifest.version, "0.4.4");
+  assert.equal(manifest.version_name, "0.4.4");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(packageLock.version, manifest.version);
   assert.equal(packageLock.packages[""].version, manifest.version);

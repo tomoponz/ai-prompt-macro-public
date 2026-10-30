@@ -59,15 +59,13 @@ async function getRunStateConversationKeyOrQuarantine() {
   } catch (error) {
     if (error?.code !== "conversation_identity_unknown") throw error;
 
-    // This stop-only path deliberately does not depend on conversation identity or a current
-    // top-document probe. A stale caller can at worst pause a Run in its own tab; it can never
-    // cause a send or revive a Run. That keeps identity_unknown durable even during navigation.
-    await failClosedRunWithoutIdentity(activeRunnerRunId);
+    // The runner owns its exact observed snapshot and performs the guarded stop.
+    // A status/bootstrap reader with only a Run ID cannot stop a newer binding.
     throw error;
   }
 }
 
-function throwRunDocumentIdentityFailure(response) {
+function throwRunDocumentIdentityFailure(response, authorityBoundary = "run-read") {
   const code = response?.errorCode;
   if (code !== "DOCUMENT_IDENTITY_UNCONFIRMED" && code !== "DOCUMENT_IDENTITY_MISMATCH") return;
   const error = new Error(response?.error ?? "Document identity could not be confirmed.");
@@ -75,33 +73,36 @@ function throwRunDocumentIdentityFailure(response) {
     ? "document_identity_mismatch"
     : "document_identity_unconfirmed";
   error.runId = typeof response?.runId === "string" ? response.runId : null;
+  copyIdentityFailClosedContext(error, response);
   if (typeof normalizeDocumentIdentityObservation === "function") {
     error.identityObservation = normalizeDocumentIdentityObservation(
       response?.identityObservation,
-      code === "DOCUMENT_IDENTITY_MISMATCH" ? "mismatch" : "unavailable"
+      code === "DOCUMENT_IDENTITY_MISMATCH" ? "mismatch" : "unavailable",
+      authorityBoundary
     );
   }
   throw error;
 }
 
 async function getActiveRun({ readOnlyObservation = false, recovery = null, authorityBoundary = null } = {}) {
+  const requestedBoundary = authorityBoundary ?? (readOnlyObservation ? "periodic-observation" : "run-read");
   const response = await chrome.runtime.sendMessage({
     type: "AIPM_RUN_GET",
     conversationKey: await getRunStateConversationKeyOrQuarantine(),
     documentInstanceId: instanceId,
     readOnlyObservation,
     readOnlyRecovery: recovery,
-    authorityBoundary: authorityBoundary ?? (readOnlyObservation ? "periodic-observation" : "run-read")
+    authorityBoundary: requestedBoundary
   });
   if (response?.identityObservation?.outcome === "mismatch") {
     throwRunDocumentIdentityFailure({
       ...response,
       errorCode: "DOCUMENT_IDENTITY_MISMATCH",
       runId: response.runId ?? activeRunnerRunId
-    });
+    }, requestedBoundary);
   }
   if (!response?.ok) {
-    throwRunDocumentIdentityFailure(response);
+    throwRunDocumentIdentityFailure(response, requestedBoundary);
     const error = new Error(response?.error ?? "Run state could not be loaded.");
     if (typeof response?.errorCode === "string" && response.errorCode) {
       error.code = response.errorCode.toLowerCase();
@@ -116,6 +117,7 @@ async function getActiveRun({ readOnlyObservation = false, recovery = null, auth
     recordDocumentIdentityRecoveryDiagnostic(response, response.run ?? null);
   }
   markIdentityRecoveredRunRead(response.run ?? null, response);
+  rememberRunFailClosedGuard(response.run ?? null, response);
   return response.run ?? null;
 }
 
@@ -187,12 +189,13 @@ async function saveActiveRun(run, runTransition = "runner", authorityBoundary = 
     authorityBoundary
   });
   if (!response?.ok) {
-    throwRunDocumentIdentityFailure(response);
+    throwRunDocumentIdentityFailure(response, authorityBoundary);
     const error = new Error(response?.error ?? "Run state could not be saved.");
     error.code = response?.errorCode === "RUN_STATE_CONFLICT" ? "run_state_conflict" : "run_state_save_failed";
     throw error;
   }
   Object.assign(run, response.run ?? {});
+  rememberRunFailClosedGuard(run, response);
   if (typeof recordDocumentIdentityRecoveryDiagnostic === "function") {
     recordDocumentIdentityRecoveryDiagnostic(response, run);
   }
@@ -536,8 +539,8 @@ async function recoverIfNeeded(controlMessage = null) {
   } catch (error) {
     if (["document_identity_unconfirmed", "document_identity_mismatch"].includes(error?.code) &&
         typeof error.runId === "string") {
-      const stopped = await failClosedRunWithoutIdentity(error.runId, error.code);
-      if (typeof recordDocumentIdentityFailureDiagnostic === "function") {
+      const stopped = await failClosedRunWithoutIdentity(error.runId, error.code, error);
+      if (stopped && typeof recordDocumentIdentityFailureDiagnostic === "function") {
         recordDocumentIdentityFailureDiagnostic(error, stopped);
       }
       recovered = true;
@@ -648,7 +651,7 @@ async function recoverActiveRun(controlMessage = null) {
       await pauseRunForRecovery(run, "recovery_ambiguous", "ambiguous");
       return;
     }
-    const lease = await acquireLease(actualKey, run.runId, run.executionSessionId, run.workflow?.recovery);
+    const lease = await acquireLease(actualKey, run.runId, run.executionSessionId, run.workflow?.recovery, run);
     if (!lease) {
       run.lastErrorCode = "lease_conflict";
       run.lastErrorMessage = makeError("lease_conflict").message;

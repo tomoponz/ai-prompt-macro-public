@@ -1,6 +1,6 @@
 "use strict";
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.3", ready: false };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.4", ready: false };
 
 var SCHEMA_VERSION = 1;
 var DIAGNOSTICS_KEY = "aipm.diagnostics.v1";
@@ -47,6 +47,10 @@ var pausedPromptTextReceipts = new WeakMap();
 // Initial composer contents are authorized by one Start, never reconstructed from
 // storage. Reinjection drops these capabilities together with paused input authority.
 var promptAppendPlans = new WeakMap();
+// Stop-only capabilities belong to the exact observed Run object, never its durable
+// JSON or a Run-ID-wide cache. The background remains responsible for expiry/use.
+var runFailClosedGuards = runFailClosedGuards instanceof WeakMap ? runFailClosedGuards : new WeakMap();
+var leaseRunContexts = leaseRunContexts instanceof WeakMap ? leaseRunContexts : new WeakMap();
 
 var sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 var nowIso = () => new Date().toISOString();
@@ -1694,7 +1698,7 @@ async function appendDiagnostic(type, meta = {}) {
       allowedMeta[key] = Math.min(max, meta[key]);
     }
   }
-  for (const key of ["userEpochChanged", "sendActionable", "fileTileFallbackSeen", "fallbackAccepted"]) {
+  for (const key of ["userEpochChanged", "sendActionable", "fileTileFallbackSeen", "fallbackAccepted", "identityObservationMissing"]) {
     if (typeof meta[key] === "boolean") allowedMeta[key] = meta[key];
   }
   const stored = await chrome.storage.local.get(DIAGNOSTICS_KEY);
@@ -1782,7 +1786,7 @@ var DOCUMENT_IDENTITY_FAILURE_CODE_BY_REASON = DOCUMENT_IDENTITY_FAILURE_CODE_BY
       unknown: "IDENTITY_UNKNOWN"
     });
 
-function normalizeDocumentIdentityObservation(value, fallbackOutcome = "unavailable") {
+function normalizeDocumentIdentityObservation(value, fallbackOutcome = "unavailable", fallbackBoundary = "run-read") {
   const outcome = ["match", "mismatch", "unavailable"].includes(value?.outcome)
     ? value.outcome
     : fallbackOutcome;
@@ -1801,7 +1805,7 @@ function normalizeDocumentIdentityObservation(value, fallbackOutcome = "unavaila
       : 0,
     boundary: typeof value?.boundary === "string" && value.boundary
       ? value.boundary.slice(0, 120)
-      : "run-read",
+      : fallbackBoundary,
     episodeId: typeof value?.episodeId === "string" && value.episodeId
       ? value.episodeId.slice(0, 80)
       : "identity-unknown",
@@ -1817,6 +1821,11 @@ function normalizeDocumentIdentityObservation(value, fallbackOutcome = "unavaila
       ? value.source
       : "probe"
   };
+  // Defaults preserve compatibility with earlier senders, but they are not measured
+  // evidence. Keep this distinction across normalization at each error boundary.
+  if (!value || typeof value !== "object" || value.observationMissing === true) {
+    observation.observationMissing = true;
+  }
   if (outcome === "unavailable" || observation.consecutiveUnavailable > 0) {
     observation.reason = DOCUMENT_IDENTITY_UNAVAILABLE_REASONS.has(value?.reason)
       ? value.reason
@@ -1845,7 +1854,8 @@ function recordDocumentIdentityFailureDiagnostic(error, run = null) {
     consecutiveUnavailable: observation.consecutiveUnavailable,
     recoveryElapsedMs: observation.recoveryElapsedMs,
     failureCode: observation.failureCode,
-    identitySource: observation.source
+    identitySource: observation.source,
+    ...(observation.observationMissing === true ? { identityObservationMissing: true } : {})
   });
 }
 
@@ -1870,21 +1880,61 @@ function recordDocumentIdentityRecoveryDiagnostic(response, run = null) {
   });
 }
 
-function throwDocumentIdentityFailure(response) {
+function copyIdentityFailClosedContext(error, response) {
+  if (response && Object.prototype.hasOwnProperty.call(response, "failClosedGuard")) {
+    error.identityFailClosedGuard = response.failClosedGuard;
+  }
+  error.identityFailClosedHandled = response?.lifecycleCommitted === true ||
+    response?.mismatchCommitted === true || response?.lifecycleContextStale === true ||
+    response?.mismatchContextStale === true || response?.failClosedAuthorityUnavailable === true;
+}
+
+function runFailClosedSnapshot(run) {
+  return Object.fromEntries(
+    ["runId", "stateRevision", "executionSessionId", "conversationKey", "boundDocumentId", "documentInstanceId"]
+      .map((key) => [key, run?.[key]])
+  );
+}
+
+function rememberRunFailClosedGuard(run, response) {
+  if (!run || typeof run !== "object") return;
+  const guard = response?.failClosedGuard;
+  if (guard && typeof guard.token === "string" && guard.token.length > 0 && guard.runId === run.runId) {
+    // A read-only recovery may return a rebound view without changing the stored
+    // binding. Keep the issued guard opaque; retain the returned view separately.
+    runFailClosedGuards.set(run, { guard, observed: runFailClosedSnapshot(run) });
+  } else {
+    runFailClosedGuards.delete(run);
+  }
+}
+
+function inheritRunFailClosedGuard(run, observedRun) {
+  const authority = observedRun && runFailClosedGuards.get(observedRun);
+  // Refresh a capability only for the same snapshot. A newer observation must not
+  // promote an old runner's stop authority to a different revision/binding.
+  if (authority && Object.entries(authority.observed).every(([key, value]) => value === run?.[key])) {
+    runFailClosedGuards.set(run, authority);
+  }
+}
+
+function throwDocumentIdentityFailure(response, authorityBoundary = "run-read") {
   const code = response?.errorCode;
   if (code !== "DOCUMENT_IDENTITY_UNCONFIRMED" && code !== "DOCUMENT_IDENTITY_MISMATCH") return;
   const error = new Error(response?.error ?? "Document identity could not be confirmed.");
   error.code = code === "DOCUMENT_IDENTITY_MISMATCH"
     ? "document_identity_mismatch"
     : "document_identity_unconfirmed";
+  copyIdentityFailClosedContext(error, response);
   error.identityObservation = normalizeDocumentIdentityObservation(
     response?.identityObservation,
-    code === "DOCUMENT_IDENTITY_MISMATCH" ? "mismatch" : "unavailable"
+    code === "DOCUMENT_IDENTITY_MISMATCH" ? "mismatch" : "unavailable",
+    authorityBoundary
   );
   throw error;
 }
 
-async function acquireLease(conversationKey, runId, executionSessionId, readOnlyRecovery = null) {
+async function acquireLease(conversationKey, runId, executionSessionId, readOnlyRecovery = null, run = null) {
+  const observed = runFailClosedSnapshot(run);
   const response = await chrome.runtime.sendMessage({
     type: "AIPM_LEASE_ACQUIRE",
     conversationKey,
@@ -1892,15 +1942,23 @@ async function acquireLease(conversationKey, runId, executionSessionId, readOnly
     documentInstanceId: instanceId,
     serviceWorkerVersion: globalThis.__AIPM_CONTENT_CORE__?.version ?? null,
     executionSessionId,
-    readOnlyRecovery
+    readOnlyRecovery,
+    failClosedGuard: run && runFailClosedGuards.get(run)?.guard
   });
-  throwDocumentIdentityFailure(response);
+  throwDocumentIdentityFailure(response, "lease-acquire");
   recordDocumentIdentityRecoveryDiagnostic(response);
-  return response?.ok && response.lease ? { ...response.lease, readOnlyRecovery } : null;
+  if (run && Object.entries(observed).every(([key, value]) => value === run[key])) {
+    rememberRunFailClosedGuard(run, response);
+  }
+  const lease = response?.ok && response.lease ? { ...response.lease, readOnlyRecovery } : null;
+  if (lease && run) leaseRunContexts.set(lease, run);
+  return lease;
 }
 
 async function renewLease(lease, runId) {
   if (!lease) return false;
+  const run = leaseRunContexts.get(lease);
+  const observed = runFailClosedSnapshot(run);
   const response = await chrome.runtime.sendMessage({
     type: "AIPM_LEASE_RENEW",
     conversationKey: lease.conversationKey,
@@ -1909,10 +1967,14 @@ async function renewLease(lease, runId) {
     documentInstanceId: instanceId,
     serviceWorkerVersion: globalThis.__AIPM_CONTENT_CORE__?.version ?? null,
     executionSessionId: lease.executionSessionId,
-    readOnlyRecovery: lease.readOnlyRecovery ?? null
+    readOnlyRecovery: lease.readOnlyRecovery ?? null,
+    failClosedGuard: runFailClosedGuards.get(run)?.guard
   });
-  throwDocumentIdentityFailure(response);
+  throwDocumentIdentityFailure(response, "lease-renew");
   recordDocumentIdentityRecoveryDiagnostic(response);
+  if (run && Object.entries(observed).every(([key, value]) => value === run[key])) {
+    rememberRunFailClosedGuard(run, response);
+  }
   return response?.ok === true && response.renewed === true;
 }
 
@@ -1926,7 +1988,8 @@ async function releaseLease(lease, runId) {
     documentInstanceId: instanceId,
     serviceWorkerVersion: globalThis.__AIPM_CONTENT_CORE__?.version ?? null,
     executionSessionId: lease.executionSessionId,
-    readOnlyRecovery: lease.readOnlyRecovery ?? null
+    readOnlyRecovery: lease.readOnlyRecovery ?? null,
+    failClosedGuard: runFailClosedGuards.get(leaseRunContexts.get(lease))?.guard
   }).catch(() => {});
 }
 
@@ -1942,4 +2005,4 @@ async function migrateLeaseIfNeeded(lease, run) {
   return lease;
 }
 
-globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.3", ready: true };
+globalThis.__AIPM_CONTENT_CORE__ = { version: "0.4.4", ready: true };

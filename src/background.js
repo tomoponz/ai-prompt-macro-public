@@ -59,6 +59,110 @@ const identityRecoveryEpisodesByTab = new Map();
 // This map is deliberately process-local: a Service Worker restart must re-prove once.
 const documentAuthorityGrantByTab = new Map();
 const DOCUMENT_IDENTITY_WORKER_TOKEN = Symbol("document-identity-worker");
+// Stop-only claims never grant send authority. They live in this worker only,
+// are single-use, and are bounded even if a content context never replies.
+const failClosedClaims = new Map();
+const FAIL_CLOSED_CLAIM_TTL_MS = 60_000;
+const FAIL_CLOSED_CLAIM_LIMIT = 128;
+
+function failClosedSnapshot(run) {
+  return {
+    runId: run.runId,
+    stateRevision: stateRevisionToken(run.stateRevision),
+    executionSessionId: run.executionSessionId,
+    conversationKey: run.conversationKey,
+    boundDocumentId: run.boundDocumentId ?? null,
+    documentInstanceId: run.documentInstanceId ?? null
+  };
+}
+
+function sameFailClosedSnapshot(left, right) {
+  if (!left || !right) return false;
+  const snapshot = failClosedSnapshot(left);
+  const other = failClosedSnapshot(right);
+  return Object.keys(snapshot).every((key) => snapshot[key] === other[key]);
+}
+
+function exactDocumentActor(documentId, documentInstanceId, sender, instanceId) {
+  let comparable = false;
+  if (typeof documentId === "string" && documentId) {
+    if (sender?.documentId !== documentId) return false;
+    comparable = true;
+  }
+  if (typeof documentInstanceId === "string" && documentInstanceId) {
+    if (instanceId !== documentInstanceId) return false;
+    comparable = true;
+  }
+  return comparable;
+}
+
+function mayStopObservedRun(run, identity, sender, instanceId) {
+  if (!run || (Number.isInteger(sender?.frameId) && sender.frameId !== 0)) return false;
+  if (exactDocumentActor(run.boundDocumentId, run.documentInstanceId, sender, instanceId)) return true;
+  // A new current document may stop the old binding it just observed. A probe
+  // that only proves a different top document does not authorize its old caller.
+  const provedTop = identity?.status === "match" ? identity.top : identity?.stopProofTop;
+  return identity?.boundary !== "periodic-observation" &&
+    exactDocumentActor(provedTop?.documentId, provedTop?.documentInstanceId, sender, instanceId);
+}
+
+function issueFailClosedGuard(tabId, run, identity, sender, instanceId, generation) {
+  if (!mayStopObservedRun(run, identity, sender, instanceId) || generation !== executionSessionGeneration ||
+      !run.runId || !run.executionSessionId || !run.conversationKey) return null;
+  const now = Date.now();
+  for (const [token, claim] of failClosedClaims) {
+    if (claim.expiresAt <= now) failClosedClaims.delete(token);
+  }
+  while (failClosedClaims.size >= FAIL_CLOSED_CLAIM_LIMIT) {
+    failClosedClaims.delete(failClosedClaims.keys().next().value);
+  }
+  const guard = Object.freeze({ token: crypto.randomUUID(), ...failClosedSnapshot(run) });
+  failClosedClaims.set(guard.token, {
+    guard, tabId, senderDocumentId: sender?.documentId ?? null,
+    senderFrameId: Number.isInteger(sender?.frameId) ? sender.frameId : null,
+    senderInstanceId: instanceId ?? null, generation,
+    epoch: documentAuthorityEpoch(tabId), expiresAt: now + FAIL_CLOSED_CLAIM_TTL_MS
+  });
+  return guard;
+}
+
+function withFailClosedGuard(response, tabId, run, identity, sender, instanceId, generation) {
+  const guard = issueFailClosedGuard(tabId, run, identity, sender, instanceId, generation);
+  return guard ? { ...response, failClosedGuard: guard } : {
+    ...response, runId: undefined, failClosedAuthorityUnavailable: true
+  };
+}
+
+function staleFailClosedClaim() {
+  return { ok: true, run: null, changed: false, staleRun: true, staleFailClosedGuard: true };
+}
+
+function contentFailClosedClaim(tabId, message, sender, expectedRunId = message?.expectedRunId) {
+  const guard = message?.failClosedGuard;
+  const claim = guard && typeof guard.token === "string" ? failClosedClaims.get(guard.token) : null;
+  if (!claim || Object.keys(claim.guard).some((key) => guard[key] !== claim.guard[key]) ||
+      expectedRunId !== claim.guard.runId || claim.tabId !== tabId ||
+      claim.senderDocumentId !== (sender?.documentId ?? null) ||
+      claim.senderFrameId !== (Number.isInteger(sender?.frameId) ? sender.frameId : null) ||
+      claim.senderInstanceId !== (message.documentInstanceId ?? null) ||
+      claim.generation !== executionSessionGeneration || claim.epoch !== documentAuthorityEpoch(tabId) ||
+      claim.expiresAt <= Date.now()) return null;
+  return claim;
+}
+
+async function failClosedRunFromContent(tabId, message, sender) {
+  const claim = contentFailClosedClaim(tabId, message, sender);
+  if (!claim) return staleFailClosedClaim();
+  failClosedClaims.delete(claim.guard.token);
+  return failClosedRunForTab(tabId, {
+    serviceWorkerVersion: message.serviceWorkerVersion, reason: message.reason,
+    expectedRunId: claim.guard.runId, expectedStateRevision: claim.guard.stateRevision,
+    expectedExecutionSessionId: claim.guard.executionSessionId,
+    expectedConversationKey: claim.guard.conversationKey,
+    expectedBoundDocumentId: claim.guard.boundDocumentId,
+    expectedDocumentInstanceId: claim.guard.documentInstanceId
+  }, claim);
+}
 
 function registerIdentityRecoveryEpisode(tabId, expectedRunId = null) {
   let resolveCancellation;
@@ -385,6 +489,13 @@ async function mutateConversationLease(message, sender) {
     authorityEpoch: documentAuthorityEpoch(tabId),
     startedAt: Date.now()
   };
+  const stopClaim = contentFailClosedClaim(tabId, message, sender, message.runId);
+  const stopStored = await chrome.storage.local.get(activeRunKey(tabId));
+  const stopRun = stopStored[activeRunKey(tabId)];
+  const observedRun = stopClaim && sameFailClosedSnapshot(stopRun, stopClaim.guard) &&
+    stopRun.executionSessionId === message.executionSessionId ? { ...stopRun } : null;
+  const refusal = (response, proof) => withFailClosedGuard(response, tabId, observedRun,
+    proof, sender, message.documentInstanceId, requestExecutionGeneration);
   let identity = await reconfirmContentDocument(
     tabId,
     sender?.documentId ?? null,
@@ -401,8 +512,8 @@ async function mutateConversationLease(message, sender) {
   );
   if (identity.status !== "match") {
     const recovered = await recoverLeaseRenewalFromBoundSender(message, sender, identity, renewalAuthority);
-    if (recovered) return recovered;
-    return withIdentityObservation({
+    if (recovered) return observedRun ? refusal(recovered, identity) : recovered;
+    return withIdentityObservation(refusal({
       ok: false,
       errorCode: identity.status === "mismatch"
         ? "DOCUMENT_IDENTITY_MISMATCH"
@@ -410,18 +521,18 @@ async function mutateConversationLease(message, sender) {
       error: identity.status === "mismatch"
         ? "現在のdocumentとLease要求元が一致しないため操作を拒否しました。"
         : "現在のdocumentを再確認できないためLease操作を拒否しました。"
-    }, identity);
+    }, identity), identity);
   }
 
   const refuseInvalidatedLeaseAuthority = () => {
     const reason = contentAuthorityInvalidReason(tabId, identity);
     if (!reason) return null;
     identity = invalidateMatchedContentIdentity(identity, reason);
-    return {
+    return refusal({
       ok: false,
       errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
       error: "document authorityが失効したためLease操作を拒否しました。"
-    };
+    }, identity);
   };
 
   const executionSessionId = await getExecutionSessionId();
@@ -534,7 +645,7 @@ async function mutateConversationLease(message, sender) {
     }
     return { ok: false, error: "Unknown lease operation." };
   });
-  return withIdentityObservation(result, identity);
+  return withIdentityObservation(result.ok && observedRun ? refusal(result, identity) : result, identity);
 }
 
 async function appendQuarantinedRun(sourceKey, run, reason) {
@@ -561,13 +672,21 @@ async function quarantineRunKey(key, run, reason) {
   await chrome.storage.local.remove(key);
 }
 
-async function failClosedRunForTab(tabId, message) {
+async function failClosedRunForTab(tabId, message, claim = null) {
   if (message?.serviceWorkerVersion !== EXTENSION_VERSION) {
     return { ok: false, error: "Content ScriptとService Workerのversionが一致しません。" };
   }
   return serializeRunState(tabId, async () => {
+    const claimIsCurrent = () => (!Object.hasOwn(message, "expectedExecutionGeneration") ||
+      message.expectedExecutionGeneration === executionSessionGeneration) &&
+      (!claim || (claim.generation === executionSessionGeneration &&
+      claim.epoch === documentAuthorityEpoch(tabId) && claim.expiresAt > Date.now()));
+    if (!claimIsCurrent()) return staleFailClosedClaim();
+    if (claim && await getExecutionSessionId() !== claim.guard.executionSessionId) return staleFailClosedClaim();
+    if (!claimIsCurrent()) return staleFailClosedClaim();
     const key = activeRunKey(tabId);
     const stored = await chrome.storage.local.get(key);
+    if (!claimIsCurrent()) return staleFailClosedClaim();
     const run = stored[key];
     if (!run || typeof run !== "object") return { ok: true, run: null, changed: false };
     if (typeof message?.expectedRunId === "string" && message.expectedRunId && run.runId !== message.expectedRunId) {
@@ -586,15 +705,15 @@ async function failClosedRunForTab(tabId, message) {
       return { ok: true, run: null, changed: false, staleRun: true, staleConversation: true };
     }
     if (Object.prototype.hasOwnProperty.call(message ?? {}, "expectedBoundDocumentId") &&
-        run.boundDocumentId !== message.expectedBoundDocumentId) {
+        (run.boundDocumentId ?? null) !== (message.expectedBoundDocumentId ?? null)) {
       return { ok: true, run: null, changed: false, staleRun: true, staleDocumentBinding: true };
     }
     if (Object.prototype.hasOwnProperty.call(message ?? {}, "expectedDocumentInstanceId") &&
-        run.documentInstanceId !== message.expectedDocumentInstanceId) {
+        (run.documentInstanceId ?? null) !== (message.expectedDocumentInstanceId ?? null)) {
       return { ok: true, run: null, changed: false, staleRun: true, staleDocumentInstance: true };
     }
     if (run.status === "stopped" || run.status === "completed") {
-      return { ok: true, run: { ...run }, changed: false, terminalRun: true };
+      return { ok: true, run: claim ? null : { ...run }, changed: false, terminalRun: true };
     }
     const identityReason = message?.reason === "document_identity_unconfirmed"
       ? "document_identity_unconfirmed"
@@ -1729,6 +1848,9 @@ function recoverUnavailableIdentityFromBoundContentSender(identity, binding, {
 function invalidateMatchedContentIdentity(identity, reason) {
   return {
     ...identity,
+    // Stop-only evidence for the snapshot this transaction observed. It cannot
+    // restore send/lease authority and is never included in diagnostics.
+    stopProofTop: identity.status === "match" ? identity.top : identity.stopProofTop,
     status: "unavailable",
     reason: DOCUMENT_IDENTITY_UNAVAILABLE_REASONS.has(reason) ? reason : "unknown",
     top: null,
@@ -1891,6 +2013,11 @@ async function getRunForTab(
       if (!readOnlyObservation) await quarantineRunKey(key, run, "stale-browser-session");
       return { ok: true, run: null, quarantined: true, quarantineReason: "stale-browser-session" };
     }
+    // Keep the first durable snapshot across every probe/storage await. A late
+    // refusal must not acquire authority over a newer same-id revision/binding.
+    const observedRun = { ...run };
+    const refusal = (response, proof) => withFailClosedGuard(response, tabId, observedRun,
+      proof, sender, currentDocumentInstanceId, requestExecutionGeneration);
     const identity = await reconfirmContentDocument(
       tabId,
       currentDocumentId,
@@ -1907,10 +2034,12 @@ async function getRunForTab(
       // invalidates the recovery transaction itself. Commit the exact Run fail-closed here:
       // the old content document may already be gone and cannot be relied on to relay the
       // terminal transition. Ordinary UNAVAILABLE remains recoverable and does not mutate.
-      const durableLifecycleStop = readOnlyObservation && lifecycleInvalidated && unavailableRunId
+      const durableLifecycleStop = readOnlyObservation && lifecycleInvalidated && unavailableRunId &&
+          mayStopObservedRun(observedRun, identity, sender, currentDocumentInstanceId)
         ? await failClosedRunForTab(tabId, {
             serviceWorkerVersion: EXTENSION_VERSION,
             expectedRunId: unavailableRunId,
+            expectedExecutionGeneration: requestExecutionGeneration,
             expectedStateRevision: run.stateRevision,
             expectedExecutionSessionId: run.executionSessionId,
             expectedConversationKey: run.conversationKey,
@@ -1919,7 +2048,7 @@ async function getRunForTab(
             reason: "document_identity_unconfirmed"
           })
         : null;
-      return withIdentityObservation({
+      return withIdentityObservation(refusal({
         ok: false,
         errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
         runId: unavailableRunId,
@@ -1927,7 +2056,7 @@ async function getRunForTab(
         lifecycleCommitted: durableLifecycleStop?.run?.resumable === false,
         lifecycleContextStale: durableLifecycleStop?.staleRun === true,
         error: "現在のdocument identityを再確認できないためRun取得を拒否しました。"
-      }, identity);
+      }, identity), identity);
     }
     if (identity.status === "mismatch") {
       // A read-only mismatch is positive evidence that the exact runner document is no
@@ -1936,10 +2065,12 @@ async function getRunForTab(
       // already inside serializeRunState and its content caller performs the same exact
       // fail-closed transition after this response, avoiding nested serialization here.
       const mismatchRunId = typeof run.runId === "string" ? run.runId : null;
-      const durableMismatch = readOnlyObservation && mismatchRunId
+      const durableMismatch = readOnlyObservation && mismatchRunId &&
+          mayStopObservedRun(observedRun, identity, sender, currentDocumentInstanceId)
         ? await failClosedRunForTab(tabId, {
             serviceWorkerVersion: EXTENSION_VERSION,
             expectedRunId: mismatchRunId,
+            expectedExecutionGeneration: requestExecutionGeneration,
             expectedStateRevision: run.stateRevision,
             expectedExecutionSessionId: run.executionSessionId,
             expectedConversationKey: run.conversationKey,
@@ -1948,7 +2079,7 @@ async function getRunForTab(
             reason: "document_identity_mismatch"
           })
         : null;
-      return withIdentityObservation({
+      return withIdentityObservation(refusal({
         ok: true,
         run: null,
         runId: mismatchRunId,
@@ -1956,7 +2087,7 @@ async function getRunForTab(
         quarantineReason: "stale-document-request",
         mismatchCommitted: durableMismatch?.run?.pauseReason === "document_identity_mismatch",
         mismatchContextStale: durableMismatch?.staleRun === true
-      }, identity);
+      }, identity), identity);
     }
     if (executionSessionGeneration !== requestExecutionGeneration ||
         await getExecutionSessionId() !== executionSessionId) {
@@ -1971,13 +2102,13 @@ async function getRunForTab(
     if (!run) return withIdentityObservation({ ok: true, run: null }, identity);
     const invalidatedAfterRefresh = contentAuthorityInvalidReason(tabId, identity);
     if (invalidatedAfterRefresh) {
-      return withIdentityObservation({
+      return withIdentityObservation(refusal({
         ok: false,
         errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
-        runId: typeof run.runId === "string" ? run.runId : null,
+        runId: observedRun.runId,
         lifecycleInvalidated: true,
         error: "document authorityが失効したためRun取得を拒否しました。"
-      }, invalidateMatchedContentIdentity(identity, invalidatedAfterRefresh));
+      }, identity), invalidateMatchedContentIdentity(identity, invalidatedAfterRefresh));
     }
     if (stopIntentMatches(tabId, run.runId)) {
       return withIdentityObservation({
@@ -2032,26 +2163,34 @@ async function getRunForTab(
       rebound.conversationKey !== run.conversationKey;
     const invalidatedBeforeReturn = contentAuthorityInvalidReason(tabId, identity);
     if (invalidatedBeforeReturn) {
-      return withIdentityObservation({
+      return withIdentityObservation(refusal({
         ok: false,
         errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
-        runId: typeof run.runId === "string" ? run.runId : null,
+        runId: observedRun.runId,
         lifecycleInvalidated: true,
         error: "document authorityが失効したためRun取得を拒否しました。"
-      }, invalidateMatchedContentIdentity(identity, invalidatedBeforeReturn));
+      }, identity), invalidateMatchedContentIdentity(identity, invalidatedBeforeReturn));
     }
     if (bindingChanged && !readOnlyObservation) await chrome.storage.local.set({ [key]: rebound });
     const invalidatedAfterRebind = contentAuthorityInvalidReason(tabId, identity);
     if (invalidatedAfterRebind) {
-      return withIdentityObservation({
+      // Only our own successful, serialized adoption may replace the original
+      // stop target. Never promote a later storage read to a new stop snapshot.
+      const ownAdoption = bindingChanged && !readOnlyObservation && sameFailClosedSnapshot(observedRun, run);
+      const refused = {
         ok: false,
         errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
-        runId: typeof run.runId === "string" ? run.runId : null,
+        runId: observedRun.runId,
         lifecycleInvalidated: true,
         error: "document authorityが失効したためRun取得を拒否しました。"
-      }, invalidateMatchedContentIdentity(identity, invalidatedAfterRebind));
+      };
+      return withIdentityObservation(ownAdoption
+        ? withFailClosedGuard(refused, tabId, rebound, identity, sender, currentDocumentInstanceId, requestExecutionGeneration)
+        : refusal(refused, identity), invalidateMatchedContentIdentity(identity, invalidatedAfterRebind));
     }
-    return withIdentityObservation({ ok: true, run: rebound }, identity);
+    return withIdentityObservation(withFailClosedGuard({ ok: true, run: rebound }, tabId,
+      readOnlyObservation ? run : rebound, identity, sender, currentDocumentInstanceId,
+      requestExecutionGeneration), identity);
   }
 
   const legacy = stored[LEGACY_ACTIVE_RUN_KEY];
@@ -2153,6 +2292,12 @@ async function setRunForTab(
     }
   }
   const key = activeRunKey(tabId);
+  const stopStored = await chrome.storage.local.get(key);
+  const stopRun = stopStored[key];
+  const observedRun = stopRun?.executionSessionId === executionSessionId &&
+    sameFailClosedSnapshot(stopRun, run) ? { ...stopRun } : null;
+  const refusal = (response, proof) => withFailClosedGuard(response, tabId, observedRun,
+    proof, sender, currentDocumentInstanceId, requestExecutionGeneration);
   const identity = await reconfirmContentDocument(
     tabId,
     documentId,
@@ -2162,7 +2307,7 @@ async function setRunForTab(
     run
   );
   if (identity.status !== "match") {
-    return withIdentityObservation({
+    return withIdentityObservation(refusal({
       ok: false,
       errorCode: identity.status === "mismatch"
         ? "DOCUMENT_IDENTITY_MISMATCH"
@@ -2170,7 +2315,7 @@ async function setRunForTab(
       error: identity.status === "mismatch"
         ? "現在のdocumentとRun更新元が一致しないため更新を拒否しました。"
         : "現在のdocumentを再確認できないためRun更新を拒否しました。"
-    }, identity);
+    }, identity), identity);
   }
   if (executionSessionGeneration !== requestExecutionGeneration ||
       await getExecutionSessionId() !== executionSessionId) {
@@ -2282,15 +2427,16 @@ async function setRunForTab(
   }
   const invalidatedBeforeSave = contentAuthorityInvalidReason(tabId, identity);
   if (invalidatedBeforeSave) {
-    return withIdentityObservation({
+    return withIdentityObservation(refusal({
       ok: false,
       errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
       error: "document authorityが失効したためRun更新を拒否しました。"
-    }, invalidateMatchedContentIdentity(identity, invalidatedBeforeSave));
+    }, identity), invalidateMatchedContentIdentity(identity, invalidatedBeforeSave));
   }
   await chrome.storage.local.set({ [key]: storedRun });
   const powerWarning = await reconcilePowerAfterMutation();
-  return withIdentityObservation({ ok: true, run: storedRun, powerWarning }, identity);
+  return withIdentityObservation(withFailClosedGuard({ ok: true, run: storedRun, powerWarning },
+    tabId, storedRun, identity, sender, currentDocumentInstanceId, requestExecutionGeneration), identity);
 }
 
 async function getOpenBrowserTabs() {
@@ -3280,6 +3426,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!supported.has(message?.type)) return false;
 
   (async () => {
+    // A child-frame bootstrap must not discover the top frame's Run and then
+    // turn its own identity refusal into a durable stop of that unrelated Run.
+    // Refuse before Run reads, coalescing, and stop-only mutations. Missing frame
+    // metadata retains the existing fresh-probe path; a known non-top frame does not.
+    if (["AIPM_RUN_GET", "AIPM_RUN_SET", "AIPM_RUN_FAIL_CLOSED",
+      "AIPM_RUN_NEW_CHAT_CONFIRM_REQUIRED", "AIPM_RUN_CONFIRM_NEW_CHAT_TARGET"].includes(message.type) &&
+        contentSenderAuthorityFailure(sender) === "top-frame-missing") {
+      const boundary = message.type === "AIPM_RUN_GET"
+        ? normalizeDocumentIdentityBoundary(message.authorityBoundary, message.readOnlyObservation === true)
+        : (message.authorityBoundary ?? (message.type === "AIPM_RUN_SET" ? "run-save" : "control"));
+      const identity = await reconfirmContentDocument(
+        sender?.tab?.id, sender?.documentId ?? null, message.documentInstanceId ?? null,
+        { boundary, readOnlyObservation: message.readOnlyObservation === true }, sender
+      );
+      return withIdentityObservation({
+        ok: false,
+        errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
+        error: "トップフレーム以外のRun要求を拒否しました。対象Runは変更していません。"
+      }, identity);
+    }
     await ensureLifecycleReady();
     if (message.type === "AIPM_RELAY_TO_CHATGPT") {
       const targetTabId = Number.isInteger(message.targetTabId) ? message.targetTabId : null;
@@ -3295,7 +3461,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (["AIPM_RUN_FAIL_CLOSED", "AIPM_RUN_NEW_CHAT_CONFIRM_REQUIRED", "AIPM_RUN_CONFIRM_NEW_CHAT_TARGET"].includes(message.type)) {
       const tabId = sender?.tab?.id;
       if (!Number.isInteger(tabId)) return { ok: false, error: "Run safety state requires a ChatGPT tab sender." };
-      if (message.type === "AIPM_RUN_FAIL_CLOSED") return failClosedRunForTab(tabId, message);
+      if (message.type === "AIPM_RUN_FAIL_CLOSED") return failClosedRunFromContent(tabId, message, sender);
       if (message.type === "AIPM_RUN_NEW_CHAT_CONFIRM_REQUIRED") return requireNewChatConfirmationForTab(tabId, message);
       return confirmNewChatTargetForTab(tabId, message, sender);
     }
@@ -3321,7 +3487,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message.conversationKey ?? null,
           sender?.documentId ?? null,
           message.documentInstanceId ?? null,
-          authorityBoundary
+          authorityBoundary,
+          Number.isInteger(sender?.frameId) ? sender.frameId : null,
+          sender?.documentLifecycle ?? null
         ]);
         const periodicOnly = authorityBoundary === "periodic-observation";
         const observationGate = periodicOnly ? runObservationByTab : runAuthorityObservationByTab;

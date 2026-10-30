@@ -1852,9 +1852,11 @@ test("ISSUE23-2: exhausted identity probes reject the update and durably fail-cl
   const stopped = await invokeRuntimeMessage({
     type: "AIPM_RUN_FAIL_CLOSED",
     expectedRunId: stored.runId,
+    failClosedGuard: rejected.failClosedGuard,
+    documentInstanceId: stored.documentInstanceId,
     reason: "document_identity_unconfirmed",
     serviceWorkerVersion: "0.4.0"
-  }, { tab: { id: tabId } });
+  }, { tab: { id: tabId }, documentId: stored.boundDocumentId });
   assert.equal(stopped.ok, true);
   assert.equal(storageData[key].status, "paused");
   assert.equal(storageData[key].phase, "ambiguous");
@@ -1874,20 +1876,29 @@ test("ISSUE23: a delayed identity fail-close cannot overwrite Stop or completion
       conversationKey: `chatgpt:c:issue23-terminal-${status}`,
       executionSessionId: "session-test",
       boundTabId: tabId,
+      boundDocumentId: `terminal-document-${tabId}`,
+      documentInstanceId: `terminal-instance-${tabId}`,
       status,
       phase: status,
       resumable: false,
       stateRevision: 12,
       cursor: { stepIndex: 1, repeatIndex: 0, sendsCompleted: 1 }
     };
+    storageData[key] = { ...structuredClone(terminal), status: "running", phase: "ready" };
+    const sender = { tab: { id: tabId }, documentId: terminal.boundDocumentId, documentLifecycle: "cached" };
+    const refused = await invokeRuntimeMessage({ type: "AIPM_RUN_GET",
+      conversationKey: terminal.conversationKey, documentInstanceId: terminal.documentInstanceId }, sender);
+    assert.ok(refused.failClosedGuard);
     storageData[key] = structuredClone(terminal);
 
     const response = await invokeRuntimeMessage({
       type: "AIPM_RUN_FAIL_CLOSED",
       expectedRunId: terminal.runId,
+      failClosedGuard: refused.failClosedGuard,
+      documentInstanceId: terminal.documentInstanceId,
       reason: "document_identity_unconfirmed",
       serviceWorkerVersion: "0.4.0"
-    }, { tab: { id: tabId } });
+    }, sender);
 
     assert.equal(response.ok, true);
     assert.equal(response.changed, false);

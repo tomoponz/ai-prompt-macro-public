@@ -1376,8 +1376,8 @@ function shortConversationLabel(key) {
 
 function runSummary(run) {
   if (!run) return "待機";
-  if (run.status === "running") return `実行 ${Number(run.cursor?.sendsCompleted ?? 0)}/${Number(run.plannedSends ?? 0)}`;
-  if (run.status === "paused") return `一時停止 ${Number(run.cursor?.sendsCompleted ?? 0)}/${Number(run.plannedSends ?? 0)}`;
+  if (run.status === "running") return `実行 ${displayDeliveredSendCount(run)}/${Number(run.plannedSends ?? 0)}`;
+  if (run.status === "paused") return `${projectRunUx({ run }).label} ${displayDeliveredSendCount(run)}/${Number(run.plannedSends ?? 0)}`;
   if (run.status === "completed") return "完了";
   if (run.status === "stopped") return "停止";
   return String(run.status ?? "待機");

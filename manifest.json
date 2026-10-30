@@ -1,10 +1,16 @@
 {
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
-  "version": "0.4.3",
-  "version_name": "0.4.3 r2",
+  "version": "0.4.4",
+  "version_name": "0.4.4",
   "description": "__MSG_extensionDescription__",
   "default_locale": "ja",
+  "icons": {
+    "16": "src/icons/apm-16.png",
+    "32": "src/icons/apm-32.png",
+    "48": "src/icons/apm-48.png",
+    "128": "src/icons/apm-128.png"
+  },
   "permissions": [
     "storage",
     "sidePanel",
@@ -24,7 +30,13 @@
     "open_in_tab": true
   },
   "action": {
-    "default_title": "__MSG_extensionName__"
+    "default_title": "__MSG_extensionName__",
+    "default_icon": {
+      "16": "src/icons/apm-16.png",
+      "32": "src/icons/apm-32.png",
+      "48": "src/icons/apm-48.png",
+      "128": "src/icons/apm-128.png"
+    }
   },
   "content_scripts": [
     {

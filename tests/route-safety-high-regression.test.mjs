@@ -182,7 +182,7 @@ function controllerContext({ conversationKey, durableRun, failClosed }) {
   return context;
 }
 
-test("HIGH-1: /c/A -> unknown -> /c/A reload cannot revive stale running state", async () => {
+test("HIGH-1: an unknown-route reader cannot stop by Run ID; an exact owner stop prevents reload revival", async () => {
   let durableRun = {
     runId: "run-A",
     provider: "chatgpt",
@@ -199,9 +199,9 @@ test("HIGH-1: /c/A -> unknown -> /c/A reload cannot revive stale running state",
   const unknown = controllerContext({
     conversationKey: () => { throw unknownIdentityError(); },
     durableRun,
-    failClosed: async (expectedRunId) => {
+    failClosed: async (observedRun) => {
       failClosedCalls += 1;
-      assert.equal(expectedRunId, "run-A");
+      assert.equal(observedRun, durableRun, "the owning runner supplies its observed object, never only a Run ID");
       durableRun = {
         ...durableRun,
         status: "paused",
@@ -217,6 +217,12 @@ test("HIGH-1: /c/A -> unknown -> /c/A reload cannot revive stale running state",
     unknown.getActiveRun(),
     (error) => error?.code === "conversation_identity_unknown"
   );
+  assert.equal(failClosedCalls, 0, "a reader does not own the exact Run object/capability");
+  assert.equal(durableRun.status, "running");
+  // The actual runner catch and background guard are exercised together in
+  // stale-identity-recovery-bridge.test.mjs. This isolated controller harness
+  // supplies that owner's committed stop before testing reload behavior.
+  await unknown.failClosedRunWithoutIdentity(durableRun);
   assert.equal(failClosedCalls, 1);
   assert.notEqual(durableRun.status, "running");
 

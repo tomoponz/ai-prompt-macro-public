@@ -3,9 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import vm from "node:vm";
 
-const controllerSource = fs.readFileSync(
+const coreSource = fs.readFileSync(new URL("../src/content-core.js", import.meta.url), "utf8");
+// Supply the actual core capability helpers to this controller-only fixture.
+// Its guard-free responses grant no stop authority; lifecycle assertions remain unchanged.
+const guardHelpers = coreSource.slice(coreSource.indexOf("function copyIdentityFailClosedContext("),
+  coreSource.indexOf("function throwDocumentIdentityFailure("));
+const controllerSource = `var runFailClosedGuards = new WeakMap();\n${guardHelpers}\n${fs.readFileSync(
   new URL("../src/content-controller.js", import.meta.url), "utf8"
-);
+)}`;
 
 // Synthetic controller-only fixture. No page, real account, prompt, or response is read.
 function bootstrapReadFailureHarness() {

@@ -75,14 +75,28 @@ const KNOWN_IDENTITY_FAILURE_CODES = new Set([
   "IDENTITY_UNKNOWN"
 ]);
 
+const KNOWN_IDENTITY_BOUNDARIES = new Set([
+  "periodic-observation", "readiness", "run-read", "run-save", "lease-acquire",
+  "lease-renew", "lease-release", "control", "send-preflight", "recovery"
+]);
+
+const KNOWN_IDENTITY_REASONS = new Set([
+  "timeout", "execute-script-rejected", "backpressure", "top-frame-missing",
+  "identity-fields-unavailable", "probe-result-invalid", "stale-result",
+  "document-lifecycle-changed", "execution-session-changed", "unknown"
+]);
+
 const KNOWN_PHASES = new Set([
+  "ambiguous",
   "awaiting_completion",
+  "confirmed-wait",
   "command-delivery",
   "completed",
   "delay",
   "discovery",
   "draft-ready",
   "injection",
+  "identity-fail-closed",
   "manual-checkpoint",
   "new-chat-confirmation-required",
   "paused",
@@ -233,11 +247,32 @@ function attachmentSettlementDetails(raw, code) {
   return result;
 }
 
+function identityEventDetails(raw, code) {
+  if (!["document_identity_unconfirmed", "document_identity_recovered"].includes(code)) return null;
+  // No raw IDs, errors, URLs, page text or arbitrary enum strings enter this projection.
+  const missing = typeof raw.identityObservationMissing === "boolean" ? raw.identityObservationMissing : null;
+  return {
+    reason: KNOWN_IDENTITY_REASONS.has(raw.reason) ? raw.reason : null,
+    outcome: ["match", "mismatch", "unavailable"].includes(raw.outcome) ? raw.outcome : null,
+    boundary: KNOWN_IDENTITY_BOUNDARIES.has(raw.boundary) ? raw.boundary : null,
+    consecutiveUnavailable: missing === true ? null : boundedInteger(raw.consecutiveUnavailable, 50),
+    recoveryElapsedMs: missing === true ? null : boundedInteger(raw.recoveryElapsedMs, 60000),
+    failureCode: KNOWN_IDENTITY_FAILURE_CODES.has(raw.failureCode) ? raw.failureCode : null,
+    identitySource: ["probe", "document-lifetime-grant", "bound-content-sender"].includes(raw.identitySource)
+      ? raw.identitySource : null,
+    identityObservationMissing: missing,
+    episodeKind: ["content-sender-invalid", "document-lifetime-grant", "identity-unknown", "bound-content-sender"]
+      .includes(raw.episodeId) ? raw.episodeId : (typeof raw.episodeId === "string" ? "other-episode" : null)
+  };
+}
+
 function detailsFrom(raw, { code, category } = {}) {
-  const attempt = boundedInteger(raw?.attempt, 50);
-  const totalAttempts = boundedInteger(raw?.totalAttempts, 50);
-  const consecutiveUnavailable = boundedInteger(raw?.consecutiveUnavailable, 50);
-  const durationMs = boundedInteger(raw?.durationMs ?? raw?.elapsedMs, 600_000);
+  const identity = identityEventDetails(raw, code);
+  const missingObservation = identity?.identityObservationMissing === true;
+  const attempt = missingObservation ? null : boundedInteger(raw?.attempt, 50);
+  const totalAttempts = missingObservation ? null : boundedInteger(raw?.totalAttempts, 50);
+  const consecutiveUnavailable = missingObservation ? null : boundedInteger(raw?.consecutiveUnavailable, 50);
+  const durationMs = missingObservation ? null : boundedInteger(raw?.durationMs ?? raw?.elapsedMs, 600_000);
   const phaseCandidate = boundedCode(raw?.phase, 40);
   const phase = KNOWN_PHASES.has(phaseCandidate) ? phaseCandidate : null;
   const recoveryMode = ["safe", "completion"].includes(raw?.recoveryMode) ? raw.recoveryMode : null;
@@ -267,7 +302,8 @@ function detailsFrom(raw, { code, category } = {}) {
     failureCode,
     identitySource,
     phase,
-    attachmentSettlement: attachmentSettlementDetails(raw, code)
+    attachmentSettlement: attachmentSettlementDetails(raw, code),
+    ...(identity ?? {})
   };
 }
 
@@ -457,6 +493,14 @@ export function diagnosticEventCopyDetails(raw) {
     result[key] = boundedInteger(raw[key], 50);
   }
   result.phase = KNOWN_PHASES.has(raw.phase) ? raw.phase : null;
+  const identity = identityEventDetails(raw, type);
+  if (identity) {
+    Object.assign(result, identity);
+    if (identity.identityObservationMissing === true) {
+      result.attempt = result.totalAttempts = result.durationMs = null;
+      result.elapsedMs = result.deadlineMs = null;
+    }
+  }
   const settlement = attachmentSettlementDetails(raw, type);
   if (settlement) {
     Object.assign(result, settlement);
@@ -487,6 +531,9 @@ export function diagnosticDetailsRows(projection) {
   if (details.sourceLayer) rows.push(["Source", details.sourceLayer]);
   if (details.failureCode) rows.push(["Identity failure", details.failureCode]);
   if (details.identitySource) rows.push(["Identity source", details.identitySource]);
+  if (details.boundary) rows.push(["Identity boundary", details.boundary]);
+  if (details.episodeKind) rows.push(["Identity episode", details.episodeKind]);
+  if (details.identityObservationMissing === true) rows.push(["Identity metadata", "not recorded"]);
   if (details.phase) rows.push(["Phase", details.phase]);
   const settlement = details.attachmentSettlement;
   if (settlement) {
