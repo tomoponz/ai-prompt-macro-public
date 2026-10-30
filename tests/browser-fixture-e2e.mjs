@@ -941,7 +941,7 @@ async function verifySidePanelFlowEntry({ context, worker, extensionId, otherCha
       assert.equal(entry?.quick?.prompt, oldQuick);
     });
 
-    await panel.getByRole("button", { name: "手順を貼り付け", exact: true }).click();
+    await panel.getByRole("button", { name: "手順を指定", exact: true }).click();
     assert.equal(await panel.locator("#flowSelectorField").isVisible(), false, "one Flow needs no extra selector");
     await panel.locator("#flowGuide > summary").click();
     await panel.evaluate(() => {
@@ -1524,7 +1524,7 @@ try {
   const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/getting-started/README.md"), "utf8");
   for (const [page, role, name] of [
     [sidePanel, "button", "ワークスペース"],
-    [sidePanel, "button", "クイック"],
+    [sidePanel, "button", "単純繰り返し"],
     [sidePanel, "combobox", "操作するChatGPTタブ"],
     [workspacePage, "button", "Flow / ワークフロー編集"]
   ]) {

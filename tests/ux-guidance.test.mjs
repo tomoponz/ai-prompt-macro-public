@@ -20,7 +20,7 @@ test("beginner-facing controls use plain Japanese wording", () => {
   const beginnerFacingSource = `${withoutHtmlComments(html)}\n${sidepanel}\n${withoutHtmlComments(workspaceHtml)}`;
   for (const text of [
     "実行コントロール",
-    "クイック",
+    "単純繰り返し",
     "ワークスペース",
     "AIへの指示",
     "繰り返し回数",

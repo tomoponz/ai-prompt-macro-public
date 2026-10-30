@@ -319,7 +319,7 @@ function renderRecoveryControls() {
 }
 
 const SAVED_MODE_LABELS = Object.freeze({
-  quick: "クイック",
+  quick: "単純繰り返し",
   workflow: "ワークフロー",
   flow: "Flow"
 });

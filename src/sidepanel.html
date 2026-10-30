@@ -84,8 +84,8 @@
     </div>
 
     <div class="entry-modes" role="group" aria-label="入力方法">
-      <button id="quickTab" type="button" aria-pressed="true">クイック</button>
-      <button id="flowTab" type="button" aria-pressed="false">手順を貼り付け</button>
+      <button id="quickTab" type="button" aria-pressed="true">単純繰り返し</button>
+      <button id="flowTab" type="button" aria-pressed="false">手順を指定</button>
     </div>
 
     <section id="quickPanel" class="card">
@@ -108,7 +108,7 @@
       <p class="hint">待機は生成完了後に追加する時間です。</p>
     </section>
 
-    <section id="flowEntryPanel" class="card hidden" aria-label="手順を貼り付け">
+    <section id="flowEntryPanel" class="card hidden" aria-label="手順を指定">
       <details id="flowGuide" class="flow-guide">
         <summary>AIに手順を作ってもらう</summary>
         <div class="flow-guide-body">
@@ -125,7 +125,7 @@
         </div>
       </details>
       <label for="flowText">AIが作った手順（AIPM Flow）</label>
-      <textarea id="flowText" class="flow-editor" rows="4" spellcheck="false"></textarea>
+      <textarea id="flowText" class="flow-editor" rows="4" spellcheck="false" placeholder="実行する手順を貼り付けてください"></textarea>
 
       <div id="flowSelectorField" class="disclosure-body" hidden>
       <label for="flowSelector">実行するFlow</label>
