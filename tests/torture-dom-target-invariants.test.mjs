@@ -5,7 +5,7 @@
 // target multiplicity remains outside C7 and still needs separate live evidence.
 //
 // Synthetic fixture success does not replace live-browser acceptance.
-// See docs/release/PC_RELEASE_CHECKLIST.md for the separate manual gates.
+// See docs/distribution/pc-release-checklist.md for the separate manual gates.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";

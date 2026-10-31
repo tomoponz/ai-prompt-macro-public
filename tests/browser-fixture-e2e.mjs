@@ -1521,7 +1521,7 @@ try {
     assert.equal(await workspacePage.locator(".workspace").getAttribute("aria-busy"), "false");
   });
   // Follow the documented entry points by their actual accessible names.
-  const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/getting-started/README.md"), "utf8");
+  const gettingStarted = fs.readFileSync(path.join(repoRoot, "docs/getting-started.md"), "utf8");
   for (const [page, role, name] of [
     [sidePanel, "button", "ワークスペース"],
     [sidePanel, "button", "単純繰り返し"],

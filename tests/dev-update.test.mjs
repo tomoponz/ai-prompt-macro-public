@@ -184,7 +184,7 @@ test("Side Panel routes messages through the background self-heal relay with exp
 });
 
 test("development documentation describes the two-step browser refresh", () => {
-  const docs = read("docs/DEVELOPMENT.md");
+  const docs = read("docs/updating.md");
   assert.match(docs, /update-ai-prompt-macro\.cmd/);
   assert.match(docs, /拡張を再読み込み/);
   assert.match(docs, /Ctrl\+R/);
