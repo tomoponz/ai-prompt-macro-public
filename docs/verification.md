@@ -1,6 +1,6 @@
 # 検証状況と未確認の範囲
 
-**2026年10月31日時点で、0.4.4の公開mainブランチへの反映と、そのコミットに対するCIの成功を確認しています。一方、現在使用中の拡張機能との同一性確認、および0.4.4の実ChatGPTでの最終確認は未検証です。**
+**2026年10月31日時点で、0.4.4の実装を含む`c8cccbe3`と、その後の文書整理を含む`aa745ec3`の公開CI成功を確認しています。一方、現在使用中の拡張機能との同一性確認、および0.4.4の実ChatGPTでの最終確認は未実施です。**
 
 このページでは、「コードに実装されていること」「テストが存在すること」「自動試験が成功したこと」「実際のサービス画面で確認できたこと」を明確に区別して記録します。
 
@@ -9,10 +9,12 @@
 | 項目 | 確認した内容 |
 | --- | --- |
 | 公開リポジトリ | [tomoponz/ai-prompt-macro-public](https://github.com/tomoponz/ai-prompt-macro-public) |
-| 基準のmain | [`c8cccbe3eea1f36ed3cd8a3ec795733ae8bb9435`](https://github.com/tomoponz/ai-prompt-macro-public/tree/c8cccbe3eea1f36ed3cd8a3ec795733ae8bb9435) |
-| PR #5 | [マージ済み](https://github.com/tomoponz/ai-prompt-macro-public/pull/5)。マージコミットは上記mainと一致 |
-| main CI | [run 41063714691](https://github.com/tomoponz/ai-prompt-macro-public/actions/runs/41063714691)。対象SHA一致、push起動、完了・成功 |
-| 照合日時 | 2026年10月31日16:47 JST。main・PR・CIとジョブの各stepを照合 |
+| 0.4.4実装の基準 | [`c8cccbe3eea1f36ed3cd8a3ec795733ae8bb9435`](https://github.com/tomoponz/ai-prompt-macro-public/tree/c8cccbe3eea1f36ed3cd8a3ec795733ae8bb9435) |
+| PR #5 | [マージ済み](https://github.com/tomoponz/ai-prompt-macro-public/pull/5)。マージコミットは上記の実装基準と一致 |
+| 実装基準のCI | [run 41063714691](https://github.com/tomoponz/ai-prompt-macro-public/actions/runs/41063714691)。対象SHA一致、push起動、完了・成功 |
+| 文書整理後の公開コミット | [`aa745ec32ee912d884b31c502f86a62c5fbd9ce0`](https://github.com/tomoponz/ai-prompt-macro-public/tree/aa745ec32ee912d884b31c502f86a62c5fbd9ce0)。`c8cccbe3`からの差分は文書と、試験3ファイル内の文書パス参照。`src`・manifestの変更なし |
+| 文書整理後のCI | [run 41188800060](https://github.com/tomoponz/ai-prompt-macro-public/actions/runs/41188800060)。対象SHAが`aa745ec3`と一致、push起動、完了・成功 |
+| 照合日 | 2026年10月31日。固定コミット間の差分とCIの対象SHA・結論を照合 |
 
 ## 証拠ごとの読み方
 
@@ -24,7 +26,9 @@
 | 実際の利用 | その版・ブラウザ・サービス画面での結果 | 0.4.4を使用中の拡張へ適用した実ChatGPT最終確認と、配布対象Chrome / Edgeでの受け入れ確認は未実施 |
 | インストール版の同一性 | 読み込み中の実装が検証対象と同じこと | 読み込み元パスとファイル内容の照合は未完了。バージョン表示や拡張IDだけでは確認済みにしません |
 
-ブラウザfixture試験は、隔離したChromiumと模擬画面（fixture）を使用します。現在のChatGPTの実際のDOM構造、サービス制限、アカウント状態をすべて再現するものではありません。また、このCIではtorture・release・theme-renderの各コマンドは実行していません。今回の文書整理にあたっては試験の新規実行は行わず、公開GitHub上の既存CI結果を照合しています。各試験の実行方法は[開発と試験](development-guide.md)を参照してください。
+ブラウザfixture試験は、隔離したChromiumと模擬画面（fixture）を使用します。現在のChatGPTの実際のDOM構造、サービス制限、アカウント状態をすべて再現するものではありません。上記の公開CIではtorture・release・theme-renderや、後から追加したブラウザ回帰試験の集約コマンドは実行していません。
+
+このCI成功の記録は、表に挙げた公開コミットに対するものです。未公開の作業ツリー変更まで検証済みとは扱いません。追加修正の結果は、その対象コミット・コマンド・実行環境とともに別途確認します。現在の試験構成と実行方法は[開発と試験](development-guide.md)を参照してください。
 
 ## 過去の報告と、残っている確認
 
@@ -32,7 +36,7 @@
 
 [0.4.4のリリース記録](releases/0.4.4.md)には、過去の版における短文20回の連続送信や、長文が添付形式になった場合の送信成功に関する利用者報告が記載されています。一方で、長文の反復中に停止したという報告もあります。これらはすべて過去の版に関する報告であり、0.4.4の実利用確認の証拠としては引き継ぎません。[反復停止の調査](history/repeat-stop-investigation.md)と[添付カードの検証範囲](history/resource-card-r2.md)も、それぞれ記載された対象版・条件とあわせて読む必要があります。
 
-今後、実サービスでの動作を確認する際は、[PCリリースチェックリスト](distribution/pc-release-checklist.md)に沿って、拡張機能の読み込み元とコミットの対応、Chrome / Edgeのバージョン、試験内容、送信済みの範囲、停止理由を記録します。短文・長文、途中停止・再開、ページ再読み込みを分けて確認し、送信結果が不明になった指示を確認目的で自動再送しないでください。
+今後、実サービスでの動作を確認する際は、[PCリリースチェックリスト](distribution/pc-release-checklist.md)に沿って、拡張機能の読み込み元とコミットの対応、Chrome / Edgeのバージョン、試験内容、送信済みの範囲、停止理由を記録します。短文・長文、途中停止・再開、ページ再読み込みを分けて確認します。利用上限時の画面と止まり方、SPAの会話切替、対象タブがChatGPT以外へ移った後の停止操作、実際のサイドパネル幅、OS側のスリープ防止も未確認として記録します。送信結果が不明になった指示を確認目的で自動再送しないでください。
 
 なお、APMの送信確認は入力欄と生成状態のUI観測に基づくものであり、回答の品質を評価するものではありません。長文が添付化された場合も、添付全文と元の指示の一致を検証する仕組みではありません。既知の制限事項は[0.4.4](releases/0.4.4.md)、利用者向けの具体的な対処手順は[ユーザーガイド](user-guide.md)を参照してください。
 

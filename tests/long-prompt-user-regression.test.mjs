@@ -227,7 +227,7 @@ for (const trustedEdit of [false, true]) {
       }
     });
     await startAndSettle(harness);
-    assertBlocked(harness, trustedEdit ? "paste_attachment_provenance_lost" : "composer_verification_failed");
+    assertBlocked(harness, trustedEdit ? "composer_user_interaction" : "composer_verification_failed");
     assert.equal(digest(harness.page.text), digest(changedText));
     assert.equal(harness.page.attachmentCount, 0);
     assert.equal(harness.page.userMutationEpoch, trustedEdit ? 1 : 0);

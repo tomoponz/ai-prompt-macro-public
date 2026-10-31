@@ -72,6 +72,9 @@ function invokeRuntimeMessage(message, sender = {}) {
 }
 
 const runKey = (tabId) => `aipm.activeRun.v2.tab.${tabId}`;
+// Each revision scenario owns a separate conversation. The shared storage keeps
+// earlier Runs alive, so sharing one key would intentionally reject later Starts.
+const conversationKey = (tabId) => `chatgpt:c:revision-${tabId}`;
 
 function seedRun(tabId, overrides = {}) {
   currentDocumentIds.set(tabId, `document-${tabId}`);
@@ -81,7 +84,7 @@ function seedRun(tabId, overrides = {}) {
     runId: "revision-run",
     provider: "chatgpt",
     contentVersion: "0.4.0",
-    conversationKey: "chatgpt:c:revision",
+    conversationKey: conversationKey(tabId),
     documentInstanceId: `instance-${tabId}`,
     executionSessionId: "session-test",
     replacesRunId: null,
@@ -107,7 +110,7 @@ function setRun(tabId, run, runTransition = "runner") {
     type: "AIPM_RUN_SET",
     run,
     runTransition,
-    conversationKey: "chatgpt:c:revision",
+    conversationKey: conversationKey(tabId),
     documentInstanceId: `instance-${tabId}`
   }, { tab: { id: tabId }, documentId: currentDocumentIds.get(tabId) });
 }
@@ -115,7 +118,7 @@ function setRun(tabId, run, runTransition = "runner") {
 function getRun(tabId) {
   return invokeRuntimeMessage({
     type: "AIPM_RUN_GET",
-    conversationKey: "chatgpt:c:revision",
+    conversationKey: conversationKey(tabId),
     documentInstanceId: `instance-${tabId}`
   }, { tab: { id: tabId }, documentId: currentDocumentIds.get(tabId) });
 }
@@ -338,7 +341,7 @@ test("STAGE2-H: an old document writer is rejected after a reload adopts the Run
   currentDocumentInstanceIds.set(tabId, "instance-after-reload");
   const adopted = await invokeRuntimeMessage({
     type: "AIPM_RUN_GET",
-    conversationKey: "chatgpt:c:revision",
+    conversationKey: conversationKey(tabId),
     documentInstanceId: "instance-after-reload"
   }, { tab: { id: tabId }, documentId: "document-after-reload" });
   assert.equal(adopted.ok, true);
@@ -348,7 +351,7 @@ test("STAGE2-H: an old document writer is rejected after a reload adopts the Run
     type: "AIPM_RUN_SET",
     run: { ...oldDocumentSnapshot, cursor: { stepIndex: 0, repeatIndex: 0, sendsCompleted: 0 } },
     runTransition: "runner",
-    conversationKey: "chatgpt:c:revision",
+    conversationKey: conversationKey(tabId),
     documentInstanceId: `instance-${tabId}`
   }, { tab: { id: tabId }, documentId: `document-${tabId}` });
 
@@ -367,7 +370,7 @@ test("STAGE2-J: Start, Pause, Resume and Stop remain accepted in sequence", asyn
     runId: "lifecycle-run",
     provider: "chatgpt",
     contentVersion: "0.4.0",
-    conversationKey: "chatgpt:c:revision",
+    conversationKey: conversationKey(tabId),
     documentInstanceId: `instance-${tabId}`,
     executionSessionId: "session-test",
     replacesRunId: null,
@@ -414,7 +417,7 @@ test("STAGE2: a legacy stored Run without a revision is adopted rather than bric
     type: "AIPM_RUN_SET",
     run: { ...storageData[runKey(tabId)], cursor: { stepIndex: 0, repeatIndex: 1, sendsCompleted: 1 } },
     runTransition: "runner",
-    conversationKey: "chatgpt:c:revision",
+    conversationKey: conversationKey(tabId),
     documentInstanceId: `instance-${tabId}`
   }, { tab: { id: tabId }, documentId: `document-${tabId}` });
 

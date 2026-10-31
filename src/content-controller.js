@@ -358,7 +358,7 @@ async function resumeRun(controlMessage = null) {
     return resumeNewChatConfirmation(run);
   }
 
-  if (["unexpected_attachment", "composer_attachment_unconfirmed", "paste_attachment_unverified", "paste_attachment_provenance_lost",
+  if (["composer_user_interaction", "unexpected_attachment", "composer_attachment_unconfirmed", "paste_attachment_unverified", "paste_attachment_provenance_lost",
     "paste_attachment_unrecognized", "paste_attachment_settlement_timeout"].includes(run.lastErrorCode)) {
     return { ok: false, error: run.lastErrorMessage || makeError(run.lastErrorCode).message };
   }
@@ -766,6 +766,17 @@ function validateControlMessage(message, run = undefined) {
   return null;
 }
 
+// This advisory observation must not hide durable Run/Stop information if the
+// composer disappears during a status read. Unknown is never reported as empty.
+function observeComposerContentPresence(composer) {
+  if (!composer || typeof ChatGptAdapter.getComposerText !== "function") return null;
+  try {
+    return !composerIsEffectivelyEmpty(ChatGptAdapter.getComposerText(composer));
+  } catch {
+    return null;
+  }
+}
+
 if (globalThis.__AIPM_CONTENT_CONTROLLER_READY__ !== true) {
   ensureInitialRecovery();
 
@@ -802,6 +813,8 @@ if (globalThis.__AIPM_CONTENT_CONTROLLER_READY__ !== true) {
             ok: true,
             provider: ChatGptAdapter.id,
             pageReady: ChatGptAdapter.matches() && Boolean(observation.composer),
+            // Presence only: never return existing input text in status or diagnostics.
+            composerHasContent: observeComposerContentPresence(observation.composer),
             generationState: observation.generationState,
             blocker: observation.blocker,
             conversationKey: ChatGptAdapter.getConversationKey(),

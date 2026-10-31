@@ -187,7 +187,7 @@ for (const intervention of ["stop", "pause", "user-edit", "blocker"]) {
     assert.equal(harness.stored().status, intervention === "stop" ? "stopped" : "paused");
     if (intervention === "user-edit") {
       assert.equal(harness.page.text, "SYNTHETIC USER EDIT");
-      assert.equal(harness.stored().pauseReason, "paste_attachment_provenance_lost");
+      assert.equal(harness.stored().pauseReason, "composer_user_interaction");
     }
     if (intervention === "pause") assert.equal(harness.stored().pauseReason, "user-pause");
   });

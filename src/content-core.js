@@ -1604,6 +1604,7 @@ function makeError(code, details = null) {
     paste_attachment_unrecognized: "長文がChatGPTの添付形式へ変換されましたが、安全に送信対象として確認できませんでした。添付状態を確認して新しく実行してください。",
     paste_attachment_settlement_timeout: "長文の添付変換を安全に確認できなかったため停止しました。添付状態を確認して新しく実行してください。",
     composer_verification_failed: "送信前のプロンプト一致確認に失敗しました。",
+    composer_user_interaction: "入力欄への利用者操作を検知したため、APMの自動送信前に停止しました。手動送信の有無と入力欄を確認してください。",
     send_unavailable: "送信ボタンを安全に利用できませんでした。",
     submission_ambiguous: "送信成功を確実に確認できないため、自動再送せず停止しました。",
     generation_timeout: "生成完了を確認できないままタイムアウトしました。",

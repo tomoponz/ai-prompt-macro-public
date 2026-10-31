@@ -196,6 +196,7 @@ const el = {
   message: document.querySelector("#message"),
   completionOutcome: document.querySelector("#completionOutcome"),
   nextAction: document.querySelector("#nextAction"),
+  existingInputWarning: document.querySelector("#existingInputWarning"),
   diagnosticsSeverity: document.querySelector("#diagnosticsSeverity"),
   diagnosticsTitle: document.querySelector("#diagnosticsTitle"),
   diagnosticsSummary: document.querySelector("#diagnosticsSummary"),
@@ -1832,6 +1833,12 @@ function renderStatus(payload, { preserveDurableStop = false, stale = null } = {
     presentationIsStale || flowInvalid || targetEditorStale || editorReloadInFlight;
   el.start.disabled = startDisabled;
   el.flowStart.disabled = startDisabled;
+  const hasExistingInput = !running && !paused && !presentationIsStale && targetReady &&
+    payload?.pageReady === true && payload?.composerHasContent === true;
+  el.existingInputWarning.hidden = !hasExistingInput;
+  el.existingInputWarning.textContent = hasExistingInput
+    ? "入力欄に既存の内容があります。初回の自動送信では、その末尾に指示を追記して送信します。プレビューには既存入力を含みません。不要な指示が残っていないか、ChatGPT側で確認してください。"
+    : "";
   let planned = null;
   try { planned = countPlannedSends(workflowFromUi()); } catch { /* Invalid input cannot advertise a count. */ }
   el.start.textContent = unresolvedStart ? (pendingStart.state === "unknown" ? "開始結果不明" : "開始結果を確認中…")

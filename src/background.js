@@ -33,6 +33,7 @@ const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const contentInjectionByTab = new Map();
 const uncertainInjectionTabs = new Set();
 const runStateByTab = new Map();
+const runStartByConversation = new Map();
 // Periodic observations may consume only one uncancellable slot. The second and final
 // slot is reserved for a fresh user mutation preflight; exact Stop does not use either.
 const statusContactByTab = createReadOnlyBackpressure({ maxObservationOutstandingPerKey: 1 });
@@ -353,6 +354,18 @@ function serializeRunState(tabId, operation) {
   runStateByTab.set(tabId, current);
   return current.finally(() => {
     if (runStateByTab.get(tabId) === current) runStateByTab.delete(tabId);
+  });
+}
+
+// The tab queue cannot arbitrate simultaneous Starts from two tabs. Hold this
+// conversation queue through the durable Start write, so the second Start sees
+// the first Run even while its per-send lease is absent (for example, in wait).
+function serializeRunStart(conversationKey, operation) {
+  const previous = runStartByConversation.get(conversationKey) ?? Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  runStartByConversation.set(conversationKey, current);
+  return current.finally(() => {
+    if (runStartByConversation.get(conversationKey) === current) runStartByConversation.delete(conversationKey);
   });
 }
 
@@ -2401,12 +2414,20 @@ async function setRunForTab(
     };
   }
   if (runTransition === "start") {
-    const schedulePreflight = preflightWorkflowStartSchedule(storedRun.workflow, Date.now());
-    if (!schedulePreflight.ok) {
+    // A lease protects only one send. A second Run must also be refused while
+    // the first is waiting or paused, without mutating either Run or its lease.
+    const allStored = await chrome.storage.local.get(null);
+    const otherActiveRun = Object.entries(allStored).some(([otherKey, otherRun]) =>
+      otherKey.startsWith(ACTIVE_RUN_KEY_PREFIX) && otherKey !== key &&
+      otherRun?.executionSessionId === executionSessionId &&
+      otherRun?.conversationKey === currentConversationKey &&
+      ["running", "paused"].includes(otherRun?.status)
+    );
+    if (otherActiveRun) {
       return {
         ok: false,
-        errorCode: "SCHEDULE_START_STALE",
-        error: "猶予時間を超えて過去になった指定時刻があるため、Run開始を保存しませんでした。"
+        errorCode: "CONVERSATION_RUN_ACTIVE",
+        error: "同じ会話は別のタブで実行中または一時停止中です。そのRunを停止してから開始してください。"
       };
     }
   }
@@ -2432,6 +2453,14 @@ async function setRunForTab(
       errorCode: "DOCUMENT_IDENTITY_UNCONFIRMED",
       error: "document authorityが失効したためRun更新を拒否しました。"
     }, identity), invalidateMatchedContentIdentity(identity, invalidatedBeforeSave));
+  }
+  if (runTransition === "start" && !preflightWorkflowStartSchedule(storedRun.workflow, Date.now()).ok) {
+    // Recheck after every awaited observation, including the other-Run scan.
+    return {
+      ok: false,
+      errorCode: "SCHEDULE_START_STALE",
+      error: "猶予時間を超えて過去になった指定時刻があるため、Run開始を保存しませんでした。"
+    };
   }
   await chrome.storage.local.set({ [key]: storedRun });
   const powerWarning = await reconcilePowerAfterMutation();
@@ -3516,7 +3545,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "AIPM_RUN_SET") {
       const tabId = sender?.tab?.id;
       if (!Number.isInteger(tabId)) return { ok: false, error: "Run state requires a ChatGPT tab sender." };
-      return serializeRunState(tabId, () => setRunForTab(
+      const saveRun = () => serializeRunState(tabId, () => setRunForTab(
           tabId,
           message.run,
           sender?.documentId ?? null,
@@ -3527,6 +3556,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           message.authorityBoundary ?? "run-save",
           sender
         ));
+      return message.runTransition === "start"
+        ? serializeRunStart(message.run?.conversationKey, saveRun)
+        : saveRun();
     }
     if (["AIPM_ARM_ALARM", "AIPM_CLEAR_ALARM", "AIPM_GET_ALARM_SIGNAL"].includes(message.type)) {
       const invalid = await validateSessionBoundMessage(message);

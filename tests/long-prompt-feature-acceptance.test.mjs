@@ -177,7 +177,7 @@ test("REQUIRED rejection: a trusted same-length user edit is preserved without S
   assert.equal(harness.page.userMutationEpoch, 1);
   assertNoDispatch(harness, 1);
   assert.equal(harness.stored().status, "paused");
-  assert.equal(harness.stored().lastErrorCode, "paste_attachment_provenance_lost");
+  assert.equal(harness.stored().lastErrorCode, "composer_user_interaction");
   assert.equal(harness.stored().resumable, false);
   assert.equal(digest(harness.page.text), digest(editedText));
   assert.equal(harness.page.attachmentCount, 0);
@@ -238,7 +238,7 @@ test("REQUIRED rejection: a queued foreign attachment accompanied by a trusted f
   await startAndSettle(harness);
   assert.ok(foreignNode);
   assertNoDispatch(harness, 1);
-  assert.equal(harness.stored().lastErrorCode, "paste_attachment_provenance_lost");
+  assert.equal(harness.stored().lastErrorCode, "composer_user_interaction");
   assert.equal(harness.stored().resumable, false);
   assert.equal(harness.page.attachmentCount, 1);
   assert.equal(attachmentNode(harness), foreignNode);

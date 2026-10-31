@@ -580,6 +580,7 @@ function isRunErrorResumable(run, code) {
     "submission_ambiguous",
     "recovery_ambiguous",
     "composer_verification_failed",
+    "composer_user_interaction",
     "unexpected_attachment",
     "composer_attachment_unconfirmed",
     "paste_attachment_unverified",
@@ -667,6 +668,7 @@ function requirePromptDeliveryState(transaction, step, binding, expectedMode = n
   // composer/binding, one recognized candidate, no trusted interference and ready
   // Send. This is conditional lifecycle evidence, not a claim about file bytes.
   if (state?.ok === true && ["text", "paste-attachment"].includes(state.mode)) return state;
+  if (state?.reason === "user-interaction") throw makeError("composer_user_interaction");
   if (String(state?.reason ?? "").includes("attachment") ||
       ["user-interaction", "delivery-mode-changed", "composer-replaced",
         "transaction-invalid"].includes(state?.reason)) {
@@ -705,6 +707,7 @@ function promptDeliverySettlementError(state, transaction) {
     fallbackRejectReason: "no-file-tile"
   };
   const reason = String(state?.reason ?? "");
+  if (reason === "user-interaction") return makeError("composer_user_interaction");
   if (["user-interaction", "extra-attachment", "delivery-mode-changed",
     "composer-replaced", "transaction-invalid"].includes(reason) ||
       reason.includes("provenance")) {

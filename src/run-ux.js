@@ -50,7 +50,7 @@ export function canStartRun({ targetReady = false, pageReady = false, blocker = 
 export function canResumePausedRun(run = null) {
   if (run?.status !== "paused") return false;
   if (run.pauseReason === NEW_CHAT_CONFIRMATION && run.phase === NEW_CHAT_CONFIRMATION) return true;
-  if (["max_sends", "unexpected_attachment", "composer_attachment_unconfirmed",
+  if (["composer_user_interaction", "max_sends", "unexpected_attachment", "composer_attachment_unconfirmed",
     "paste_attachment_unverified", "paste_attachment_provenance_lost",
     "paste_attachment_unrecognized", "paste_attachment_settlement_timeout"].includes(run.lastErrorCode)) return false;
   if (run.outbox) {
@@ -138,6 +138,11 @@ function failClosedReason(run) {
   }
   // Preserve the duplicate-send boundary when the durable record does not
   // provide an explicit recoverable pre-click or confirmed-wait state.
+  if (run?.phase === "prepared" && run?.outbox?.state === "prepared") {
+    return reason === "composer_user_interaction"
+      ? "入力欄への利用者操作を検知したため、APMの自動送信前に停止しました。手動送信の有無と入力欄を確認してください。"
+      : "送信前の安全条件を確認できず、APMの自動送信前に停止しました。手動送信の有無、入力欄と添付を確認してください。";
+  }
   if (run?.outbox) {
     return "送信状態を一意に確定できないため、重複送信を避けて自動継続しませんでした。";
   }
@@ -282,16 +287,16 @@ export function nextActionForRun({
     }
     if ((run.pauseReason ?? run.lastErrorCode) === "paste_attachment_settlement_timeout" &&
         run.outbox?.state === "prepared") {
-      return "次の操作: 「停止」を押し、ChatGPT側の入力欄と添付を確認してください。自動では再開しません。手動送信した場合は、重複しないよう残りの手順と回数を調整してから新しく開始してください。";
+      return "次の操作: 「停止」を押し、ChatGPT側の入力欄と添付を確認してください。自動では再開しません。新しく開始する前に、入力欄に残った不要な指示を削除してください。手動送信した場合は、重複しないよう残りの手順と回数も調整してください。";
     }
     if (run.pauseReason === "paste_attachment_unverified" && run.phase === "attachment-blocked") {
-      return "次の操作: 「停止」を押し、ChatGPT側で添付の内容と送信先を確認してください。手動で送信した場合は、送信済みの指示が重複しないよう残りの手順と回数を自分で設定してから、新しく開始してください。";
+      return "次の操作: 「停止」を押し、ChatGPT側で添付の内容と送信先を確認してください。新しく開始する前に、入力欄に残った不要な指示を削除してください。手動で送信した場合は、重複しないよう残りの手順と回数も調整してください。";
     }
     if (run.pauseReason === NEW_CHAT_CONFIRMATION && canResumePausedRun(run)) {
       return "次の操作: 同じChatGPTタブで、作成された会話と最初の指示が1回だけ送られていることを確認し、「再開」を押してください。";
     }
     if (!canResumePausedRun(run)) {
-      return "次の操作: ChatGPT側の状態を確認し、「停止」を押してください。同じ指示は自動再送されません。";
+      return "次の操作: ChatGPT側の状態を確認し、「停止」を押してください。同じ指示は自動再送されません。新しく開始する前に、入力欄に残った不要な指示を削除し、添付と残りの手順・回数を確認してください。";
     }
     if (run.pauseReason === "user-pause") {
       return "次の操作: 続けるなら「再開」、終了するなら「停止」を押してください。";
@@ -314,7 +319,7 @@ export function nextActionForRun({
     return "次の操作: 結果をChatGPT側で確認するか、設定を変えて新しく開始できます。";
   }
   if (run?.status === "stopped") {
-    return "次の操作: 必要なら設定を確認し、新しく「開始」を押してください。";
+    return "次の操作: 新しく開始する前に、入力欄に残った不要な指示を削除し、添付と残りの手順・回数を確認してください。初回は既存入力の末尾へ指示を追記します。";
   }
   return "次の操作: 指示と回数を確認し、「開始」を押してください。";
 }

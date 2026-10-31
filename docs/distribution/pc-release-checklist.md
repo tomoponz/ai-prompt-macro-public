@@ -3,16 +3,18 @@
 このチェックリストは、「リポジトリ上で実行する自動チェック（automated checks）」と「実際のChrome / Edgeでしか確認できない項目（live）」を分けて扱います。実行していない項目をPASSとして扱いません。
 
 確認対象の公開commitとブランチを、末尾の証跡記録に記入してください。
-安全性ベースラインは、検証対象の公開ソースと、そのcommitに含まれる回帰テストで確認します。
+安全性ベースラインは、検証対象の公開ソースと、そのcommitに含まれる回帰テストで確認します。実サービスへ送信するlive項目は、送信を許可したテスト用の会話・文章だけで行い、私的な下書きや認証情報を入力欄に置かないでください。
 
 ## リリース判定ルール
 
 次をすべて満たすまで、PCリリース候補（PC Release Candidate）が完成したと判定しません。
 
 - [ ] 未解決のBLOCKER / HIGHが0件
+- [ ] `npm ci`でlock記載の開発依存を導入済み（`npm test`にも`playwright-core`が必要）
 - [ ] `npm test`がPASS
 - [ ] `npm run check`がPASS
 - [ ] `npm run test:browser`がPASS
+- [ ] `npm run test:browser:repeat` / `test:browser:resource-card` / `test:browser:regressions`がPASS
 - [ ] `git diff --check`がPASS
 - [ ] Chrome Desktopでの実ブラウザスモークテスト（live smoke）がPASS
 - [ ] Edge Desktopでの実ブラウザスモークテスト（live smoke）がPASS
@@ -69,7 +71,8 @@
 - [ ] `tabs`、`history`、`cookies`、`webRequest`、`<all_urls>`の権限がない
 - [ ] 結果が曖昧な送信（ambiguous submit）を自動再試行しない
 - [ ] 送信前にoutboxを永続保存する処理（persist-before-submit）と、入力欄テキストの完全一致検証（exact composer verification）を維持
-- [ ] 同じ会話への送信者を1つに限るlease（same-conversation single-sender lease）を維持
+- [ ] 同じ会話の新規Startを直列化し、同じ実行セッションの別タブに`running` / `paused`のRunがあれば開始保存を拒否する
+- [ ] 送信区間のsingle-sender leaseを維持し、待機時などの解放と新規Startの受付制限を区別する
 - [ ] 対象タブと現在のトップdocumentの固定（target tab / current top document pinning）を維持
 - [ ] 古い書き込み元（stale writer）/ 古いdocument / 古いRun revisionを拒否
 - [ ] 不明なルート / 会話の識別情報を、永続的に安全側で停止（durably fail closed）
@@ -105,17 +108,20 @@
 
 ## 候補パッケージ
 
-最終候補のcommitから、パッケージ化されていない拡張機能として読み込む（Load unpacked）ための最小のアーカイブを作ります。
+最終候補のcommitから、Load unpackedで読み込める公開ソース一式のZIPを作ります。READMEから辿る文書・コード・試験の相対リンクを保つため、任意の数ファイルだけを選別しません。既存ZIPを上書きしない名前を選び、出力先は作業ツリーの外にします。
 
 ```bash
-git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json _locales src README.md PRIVACY.md SECURITY.md LICENSE docs/getting-started.md docs/user-guide.md docs/faq.md
+git archive --format=zip --output=../ai-prompt-macro-pc-rc.zip HEAD
 ```
 
 - [ ] ZIPを展開したルート直下に`manifest.json`がある
-- [ ] `_locales/`、`src/`、README、Privacy、Security、License、初心者向けドキュメントだけを含む
-- [ ] `.git/`、`node_modules/`、テスト、調査資料、ローカルの状態を含まない
+- [ ] `_locales/`、`src/`、ルート文書、`docs/`、参照される公開のscripts・tests・CI設定など、対象commitの追跡ファイルを含む
+- [ ] 展開後もREADMEと文書内の相対リンクが解決する
+- [ ] `.git/`、`node_modules/`、未追跡の実行結果、ローカルの状態を含まない
 - [ ] アーカイブのSHA-256と元のcommitを証跡へ記録
 - [ ] アーカイブを展開し、Chrome / EdgeのLoad unpackedで同じ手動スモークテストを再実行
+
+これは手動導入・参照用のソースZIPです。Edge Add-onsへ提出する最小の実行用ZIPは、別の[パッケージ仕様](edge-store-package.md)に従って作成・検査します。
 
 ## ドキュメントの記載要件
 
@@ -145,11 +151,13 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json _
 - [ ] Project New Chatでも同じ開始前確認を行い、会話作成だけで自動開始しない
 - [ ] 旧Runが初回送信後の確認待ちで残っている場合だけ、対象と初回1回を確認した明示的なResumeにより残りを送信する
 - [ ] 旧Runの確認待ちでResume前にページを再読み込みしても、追加Sendが0回
-- [ ] 戻る / 進むや別の会話への移動で、自動継続が0回
+- [ ] 別の会話への移動では、その会話を継続先として自動採用しない。同じタブ・元の会話へ戻った際の安全なRunの自動復旧とは区別する
 - [ ] Aの送信確認後にページを再読み込みしても、B / Cが各1回、Aの重複が0回
 - [ ] 待機（Delay）中に再読み込みしても残り時間から継続し、A / B / Cの重複が0回
 - [ ] 現在のChatGPT UIで、contenteditableへの書き込みと完全一致の検証が成功
-- [ ] 入力欄に利用者の下書きがある場合は、上書きもSendもしない
+- [ ] 許可したテスト用の既存入力を保全し、最初の「入力して送信」で末尾へ指示を追記して一緒に送る。2回目以降に初期入力を復元しない
+- [ ] 「入力だけして確認」は別ケースとして、既存の下書き・添付があれば書き換えず、Sendが0回
+- [ ] 送信前停止後の残存入力を確認し、新しいRunの前に不要な指示を取り除く。プレビュー本文に既存入力が含まれないことを確認
 - [ ] selector / 接続を確認できない場合に、別のタブへ代わりにSendしない（fallbackしない）
 - [ ] Pause -> Resume -> Stopの操作部品が、固定表示領域（sticky area）から操作できる
 - [ ] **実行中 / 一時停止中 / 確認が必要** と **次の操作** の表示が実際の状態に一致
@@ -171,12 +179,14 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json _
 - [ ] タブAへのStart / Pause / Resume / StopがタブBへ送られない
 - [ ] 対象タブが一時的に見つからなくても、別のタブへ自動で切り替えない
 - [ ] タブ切り替え中のStartを拒否し、古いUIの状態を別のタブへ保存しない
-- [ ] 同じcanonical conversationを2つのタブで実行すると、single-sender leaseが競合を止める
+- [ ] 同じ実行セッション・同じcanonical conversationで、タブAのRunが待機中または一時停止中でも、タブBの新規Startを拒否する
+- [ ] Aを停止した後はBの新規Startを許可し、異なる会話のRunは妨げない。旧Runの互換Resume・別プロファイル・手動操作まで排他したとは判定しない
 - [ ] タブを閉じた後、古いタブに結び付いたRunが、再利用されたタブへ結び付かない
 
 ## 再読み込みと再起動のスモークテスト
 
-- [ ] 同じセッション内のページ再読み込みでは、安全な状態だけを復旧する
+- [ ] 同じセッション・同じタブ・同じ会話のページ再読み込みでは、安全な保存Runだけを自動復旧する
+- [ ] ページ側の進行停止後も保存Runが`running`なら、残りの自動送信が復旧し得ると案内される。復旧を望まないケースは先に明示Stopし、その後のSendが0回
 - [ ] 結果が曖昧なoutboxでの再読み込みは再開不可の停止となり、自動送信0回
 - [ ] 旧RunのNew Chat confirmation-required状態で再読み込みしてもpausedのままで、自動送信0回
 - [ ] 実行中にservice workerが再起動しても安全な状態だけを復旧し、重複0回
@@ -191,7 +201,8 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json _
 - [ ] 画面の消灯は許可される
 - [ ] Pauseで要求を解放する
 - [ ] Resumeで要求を再取得する
-- [ ] Stop / 完了で解放する
+- [ ] Stop / 完了が保存状態へ反映されると解放する
+- [ ] ページ側が止まっても保存Runが`running`なら要求が残り得ることを記録し、明示Stopで解除する
 - [ ] 複数タブのうち1つでも有効化済みのRunが実行中なら維持し、最後のRunの終了で解放する
 - [ ] ブラウザの完全な再起動で解放する
 - [ ] すでにスリープ / 休止状態のPCを起こさないことを確認
@@ -201,6 +212,7 @@ git archive --format=zip --output=ai-prompt-macro-pc-rc.zip HEAD manifest.json _
 
 - [ ] ログインが必要な状態でSendが0回、次の操作でログインの確認を案内する
 - [ ] CAPTCHA / 利用上限 / サービスのモーダルを回避（bypass）する操作が0回
+- [ ] 利用上限・サービスエラーの専用検出はないと明記し、実際の画面と入力・送信状態、停止の有無・理由を記録する。構造上の信号がない場合も必ず止まるという期待値を置かない
 - [ ] 無害 / 不明なモーダルでは、推測でSendせず停止する
 - [ ] 結果が曖昧な送信ではResumeを許可せず、手動での確認を案内する
 - [ ] 接続が失われた場合は選択中の対象を維持し、再読み込み / アクセス許可の確認を案内する

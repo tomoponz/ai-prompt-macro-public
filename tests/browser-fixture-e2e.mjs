@@ -2392,7 +2392,7 @@ try {
   await eventually("C10.1 trusted interaction during long settlement sends zero", async () => {
     const run = await activeRunFor(worker, firstTabId);
     assert.equal(run?.status, "paused");
-    assert.equal(run?.lastErrorCode, "paste_attachment_provenance_lost");
+    assert.equal(run?.lastErrorCode, "composer_user_interaction");
   });
   assert.deepEqual(await fixtureSends(firstChat), []);
   await sidePanel.locator("#stop").click();
@@ -2491,7 +2491,7 @@ try {
   await eventually("C9 trusted user interaction invalidates delivery", async () => {
     const run = await activeRunFor(worker, firstTabId);
     assert.equal(run?.status, "paused");
-    assert.equal(run?.lastErrorCode, "paste_attachment_provenance_lost");
+    assert.equal(run?.lastErrorCode, "composer_user_interaction");
   });
   assert.deepEqual(await fixtureSends(firstChat), []);
   await sidePanel.locator("#stop").click();

@@ -198,7 +198,7 @@ function normalizedCode(value) {
 
 function classify(code) {
   if (!code) return "UNKNOWN";
-  if (code === "user_pause" || code === "user_stop" || code === "manual_checkpoint" ||
+  if (code === "composer_user_interaction" || code === "user_pause" || code === "user_stop" || code === "manual_checkpoint" ||
       code === "draft_ready" || code === "new_chat_confirmation_required" || code === "pause_requested" ||
       code === "checkpoint" || code === "schedule_late") return "USER";
   if (code.includes("attachment") || code.includes("paste_attachment")) return "ATTACHMENT";
@@ -308,6 +308,20 @@ function detailsFrom(raw, { code, category } = {}) {
 }
 
 function specialize(base, code, raw = {}) {
+  if (code === "composer_user_interaction") {
+    const preSend = raw.phase === "prepared" && raw.deliveryCertainty === "prepared";
+    return {
+      ...base,
+      severity: "safety-stop",
+      title: "入力欄への利用者操作を検知しました",
+      summary: raw.deliveryCertainty === "confirmed"
+        ? "送信は確認済みです。入力欄への利用者操作を検知した記録だけで、未送信とは判断しません。"
+        : preSend ? "入力欄への利用者操作を検知したため、APMの自動送信前に停止しました。手動送信の有無を確認してください。"
+        : "入力欄への利用者操作を検知した記録があります。この記録だけで未送信とは判断しません。",
+      safetyMeaning: "入力内容を上書きせず、自動再開を止めています。手動送信の有無は判定しません。",
+      nextAction: "「停止」を押し、新しく開始する前に入力欄に残った不要な指示を削除してください。添付と残りの手順・回数も確認してください。"
+    };
+  }
   if (code === "send_confirmed") {
     return {
       ...base,
@@ -463,6 +477,7 @@ export function projectRunDiagnostic(run = null, { blocker = null } = {}) {
       code,
       recoveryMode: run.workflow?.recovery?.mode,
       deliveryCertainty: run.outbox?.state,
+      phase: run.phase,
       timestamp: run.updatedAt
     });
   }

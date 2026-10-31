@@ -87,7 +87,7 @@ for (const userRace of ["file-attach", "drop", "paste", "typing", "attachment-re
       onWrite: ({ page }) => { page.userMutationEpoch += 1; }
     });
     assert.equal(harness.page.clicks, 0);
-    assert.equal(harness.stored().lastErrorCode, "paste_attachment_provenance_lost");
+    assert.equal(harness.stored().lastErrorCode, "composer_user_interaction");
   });
 }
 

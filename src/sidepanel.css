@@ -503,6 +503,10 @@ summary:focus-visible { outline: 2px solid var(--aipm-accent); outline-offset: 2
   line-height: 1.5;
   color: var(--aipm-muted);
 }
+#existingInputWarning {
+  font-size: var(--aipm-font-body);
+  color: var(--aipm-text);
+}
 .runtime-warning {
   margin: 0;
   padding: 9px 10px;

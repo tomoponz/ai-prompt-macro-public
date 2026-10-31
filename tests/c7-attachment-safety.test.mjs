@@ -61,7 +61,7 @@ test("R4: attachment conversion with an empty composer remains untouched and sen
   await startAndSettle(harness, "C7 LONG PROMPT");
   assert.equal(harness.page.clicks, 0);
   assert.equal(harness.page.attachmentCount, 1, "the extension must not delete user-visible attachment state");
-  assert.equal(harness.stored().lastErrorCode, "paste_attachment_provenance_lost");
+  assert.equal(harness.stored().lastErrorCode, "composer_user_interaction");
   assert.equal(harness.stored().resumable, false);
 });
 

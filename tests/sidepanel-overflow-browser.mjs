@@ -3,6 +3,7 @@
 // profile, storage, clipboard or external request is involved.
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
@@ -15,8 +16,11 @@ const quick = process.argv.includes("--quick");
 const themeFilter = process.argv.find(arg => arg.startsWith("--theme="))?.slice(8);
 const baselineCssFile = process.argv.find(arg => arg.startsWith("--baseline-css="))?.slice(15);
 const baselineCss = baselineCssFile ? fs.readFileSync(path.resolve(root, baselineCssFile), "utf8") : null;
-const evidence = path.resolve(process.env.AIPM_LAYOUT_EVIDENCE_DIR ??
-  path.join(root, "artifacts/sidepanel-layout"), phase);
+// Default evidence must not dirty a checkout or block clean-tree packaging.
+// An explicit directory still lets CI/local callers retain a chosen evidence set.
+const evidenceRoot = process.env.AIPM_LAYOUT_EVIDENCE_DIR ??
+  fs.mkdtempSync(path.join(os.tmpdir(), "aipm-sidepanel-layout-"));
+const evidence = path.resolve(evidenceRoot, phase);
 fs.mkdirSync(evidence, { recursive: true });
 const widths = quick ? [320, 420] : [280, 320, 360, 380, 420, 480];
 const themes = themeFilter ? THEMES.filter(theme => theme.id === themeFilter) : quick ? THEMES.filter(theme => theme.id === "default") : THEMES;
@@ -163,7 +167,7 @@ try {
   const failed = results.filter(result => result.problems.length);
   const summary = { phase, baselineCss: baselineCss !== null, kind: "offline production markup/CSS/theme with synthetic Run presentation",
     themeCount: themes.length, widths, densities, languages, total: results.length, passed: results.length - failed.length,
-    failed: failed.length, errors, blockedRequests, screenshots };
+    failed: failed.length, errors, blockedRequests, screenshots, evidenceDirectory: evidence };
   fs.writeFileSync(path.join(evidence, "results.json"), JSON.stringify({ summary, results }, null, 2));
   console.log(JSON.stringify(summary, null, 2));
   for (const result of failed.slice(0, 5)) console.log(`FAIL ${result.label}: ${result.problems.join("; ")}`);

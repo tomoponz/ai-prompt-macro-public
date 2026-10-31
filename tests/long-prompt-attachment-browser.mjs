@@ -40,7 +40,9 @@ const cases = [
   { name: "five-second-pending", prompt: long48, repeat: 1, convert: true, delay: 5_000 },
   { name: "preexisting-attachment", prompt: long48, repeat: 1, convert: true, negative: "existing" },
   { name: "trusted-user-edit", prompt: long48, repeat: 1, convert: true, delay: 60_000, negative: "user" },
-  { name: "route-change", prompt: long48, repeat: 1, convert: true, delay: 60_000, negative: "route" }
+  { name: "route-change", prompt: long48, repeat: 1, convert: true, delay: 60_000, negative: "route" },
+  { name: "route-change-without-stop-authority", prompt: long48, repeat: 1,
+    convert: true, delay: 60_000, negative: "route", stopAuthority: false }
 ];
 
 const browser = await chromium.launch({ headless: true });
@@ -75,7 +77,7 @@ try {
       const composer = ChatGptAdapter.findComposer();
       const stats = { writes: 0, clickTimes: [], clickPositions: [], firstWriteAt: null,
         modes: [], pendingSeen: false, foreignTileSent: false, semanticHashes: [], trustedKeys: 0,
-        failClosedRequests: [], attachmentButtonClicks: 0 };
+        failClosedRequests: [], validatedStopClaims: 0, attachmentButtonClicks: 0 };
       globalThis.longFixture = { stats, initialAttachment, composer, run: null, activeRun: null,
         initialAttachmentMarkup: initialAttachment?.outerHTML ?? null };
       const semanticFileHashes = new WeakMap();
@@ -117,11 +119,31 @@ try {
       };
       // Replace only extension transport. Settlement deadline/stability constants,
       // transactions, observer, guards, and acknowledgement remain production.
+      // Model the 0.4.4 stop-only capability on each observed/persisted snapshot.
+      // The real background's actor/epoch checks remain separate protocol tests.
+      const stopClaims = new Map();
+      let stopClaimSequence = 0;
+      const stopSnapshot = run => ({
+        runId: run.runId, stateRevision: run.stateRevision,
+        executionSessionId: run.executionSessionId, conversationKey: run.conversationKey,
+        boundDocumentId: run.boundDocumentId ?? null, documentInstanceId: run.documentInstanceId ?? null
+      });
+      const observeStopAuthority = run => {
+        let guard = null;
+        if (spec.stopAuthority !== false) {
+          guard = { token: `synthetic-long-stop-${++stopClaimSequence}`, ...stopSnapshot(run) };
+          stopClaims.set(guard.token, { guard: structuredClone(guard), expiresAt: Date.now() + 60_000 });
+          while (stopClaims.size > 128) stopClaims.delete(stopClaims.keys().next().value);
+        }
+        rememberRunFailClosedGuard(run, { failClosedGuard: guard });
+        return run;
+      };
       saveActiveRun = async run => {
         longFixture.activeRun = structuredClone(run);
+        observeStopAuthority(run);
         if (["text", "paste-attachment"].includes(run.outbox?.deliveryMode)) stats.modes.push(run.outbox.deliveryMode);
       };
-      getActiveRun = async () => structuredClone(longFixture.activeRun);
+      getActiveRun = async () => observeStopAuthority(structuredClone(longFixture.activeRun));
       acquireLease = async (conversationKey, runId, executionSessionId) => ({
         conversationKey, runId, executionSessionId, nonce: "synthetic-long-lease"
       });
@@ -133,6 +155,15 @@ try {
       globalThis.chrome = { runtime: { sendMessage: async message => {
         if (message.type !== "AIPM_RUN_FAIL_CLOSED") throw new Error("Unexpected synthetic transport call");
         stats.failClosedRequests.push(structuredClone(message));
+        const guard = message.failClosedGuard;
+        const claim = stopClaims.get(guard?.token);
+        if (!claim || JSON.stringify(guard) !== JSON.stringify(claim.guard) || claim.expiresAt <= Date.now() ||
+            message.expectedRunId !== guard.runId || message.documentInstanceId !== instanceId ||
+            JSON.stringify(stopSnapshot(guard)) !== JSON.stringify(stopSnapshot(longFixture.activeRun))) {
+          throw new Error("Synthetic stop-only capability does not authorize this Run snapshot");
+        }
+        stopClaims.delete(guard.token);
+        stats.validatedStopClaims += 1;
         return { ok: true, run: null };
       } } };
       READY_STABLE_MS = 20;
@@ -241,11 +272,19 @@ try {
         if (spec.negative === "user") {
           assert.ok(result.trustedKeys > 0);
           assert.equal(result.userEditPresent, true);
-          assert.equal(result.reason, "paste_attachment_provenance_lost");
+          assert.equal(result.reason, "composer_user_interaction");
         } else {
-          assert.equal(result.failClosedRequests.length, 1);
-          assert.equal(result.failClosedRequests[0].type, "AIPM_RUN_FAIL_CLOSED");
-          assert.equal(result.failClosedRequests[0].expectedRunId, "synthetic-long-run");
+          if (spec.stopAuthority === false) {
+            assert.equal(result.failClosedRequests.length, 0);
+            assert.equal(result.validatedStopClaims, 0);
+            assert.equal(result.status, "running", "without authority, the stored Run must remain untouched");
+          } else {
+            assert.equal(result.failClosedRequests.length, 1);
+            assert.equal(result.validatedStopClaims, 1);
+            assert.equal(result.failClosedRequests[0].type, "AIPM_RUN_FAIL_CLOSED");
+            assert.equal(result.failClosedRequests[0].expectedRunId, "synthetic-long-run");
+            assert.equal(result.failClosedRequests[0].failClosedGuard.conversationKey, result.originalConversationKey);
+          }
           assert.equal(result.boundConversationKey, result.originalConversationKey);
           assert.notEqual(result.boundConversationKey, result.currentConversationKey);
         }
